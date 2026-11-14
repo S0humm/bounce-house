@@ -3,7 +3,7 @@ extends RigidBody2D
 # How much each chip color adds to the ball's multiplier
 const CHIP_ADD := {"white": 0.01, "red": 0.25, "blue": 0.05, "green": 0.1}
 
-@export var max_lifetime := 12.0   # seconds before a ball is removed no matter what
+@export var max_lifetime := 20.0   # seconds before a ball is removed no matter what (typical fall is ~9s, slowest ~12s)
 @export var stuck_speed := 10.0    # slower than this counts as "not moving"
 @export var stuck_delay := 1.0     # seconds of not moving before we nudge it
 
@@ -31,7 +31,7 @@ func _on_body_entered(body: Node) -> void:
 		body.hit()
 		var chip: String = body.get_meta("chip", "white")
 		if chip == "black":
-			# Black chip: wipe the ball's multiplier back to zero
+			# Black chip: halve the ball's multiplier
 			bonus *= 0.5
 			flash_label(Color(1.0, 0.3, 0.3))
 		else:

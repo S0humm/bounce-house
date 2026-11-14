@@ -103,15 +103,21 @@ func update_status() -> void:
 # ---------- Betting ----------
 
 func change_bet(direction: int) -> void:
-	var i := 0
-	while i < BET_STEPS.size() - 1 and BET_STEPS[i] < bet:
-		i += 1
-	if direction > 0 and BET_STEPS[i] <= bet:
-		i += 1
-	elif direction < 0:
-		i -= 1
-	i = clamp(i, 0, BET_STEPS.size() - 1)
-	bet = BET_STEPS[i]
+	# Move to the next step above/below the current bet, never past what you can afford
+	var target: int = bet
+	if direction > 0:
+		for step in BET_STEPS:
+			if step > bet:
+				target = step
+				break
+		if target > money:
+			target = bet   # can't afford the next step, stay put
+	else:
+		target = BET_STEPS[0]
+		for step in BET_STEPS:
+			if step < bet:
+				target = step
+	bet = target
 	clamp_bet()
 	update_status()
 
@@ -136,19 +142,25 @@ func drop_ball() -> void:
 	ball.set_meta("bet", bet)
 	var center_x := get_viewport_rect().size.x / 2.0
 	ball.position = Vector2(center_x + randf_range(-drop_jitter, drop_jitter), 20)
-	ball.tree_exited.connect(_on_ball_gone)
+	ball.tree_exited.connect(_on_ball_gone.bind(ball))
 	add_child(ball)
 	clamp_bet()
 	update_status()
 
 # Runs whenever a ball is removed (collected, timed out, or fell off)
-func _on_ball_gone() -> void:
+func _on_ball_gone(ball: Node) -> void:
 	balls_in_play -= 1
+	if not ball.get_meta("settled", false):
+		# Timed out or lost before reaching the tray: give the bet back
+		var refund: int = ball.get_meta("bet", 0)
+		money += refund
+		message_label.text = "Ball timed out.\n$%d refunded." % refund
+		update_status()
 	call_deferred("check_ante_end")
 
 # Ball reached the collection tray: pay out bet x chip multiplier
 func _on_tray_entered(body: Node2D) -> void:
-	if body.has_method("get_multiplier"):
+	if body.has_method("get_multiplier") and not body.get_meta("settled", false):
 		var ball_bet: int = body.get_meta("bet", 0)
 		var mult: float = body.get_multiplier()
 		var payout := int(round(ball_bet * mult))
@@ -158,6 +170,7 @@ func _on_tray_entered(body: Node2D) -> void:
 		last_value.text = "x%.3f" % mult
 		message_label.text = "$%d bet  x%.3f\nPaid $%d  (%s%d)" % [ball_bet, mult, payout, sign, net]
 		update_status()
+		body.set_meta("settled", true)
 		body.queue_free()
 
 func _unhandled_input(event: InputEvent) -> void:
