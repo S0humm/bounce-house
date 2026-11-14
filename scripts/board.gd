@@ -2,6 +2,8 @@ extends Node2D
 
 const PEG_SCENE := preload("res://scenes/peg.tscn")
 const BALL_SCENE := preload("res://scenes/ball.tscn")
+const FxScript := preload("res://scripts/fx.gd")
+const PixelLabel := preload("res://scripts/pixel_label.gd")
 
 const CHIP_TEXTURES := {
 	"white": preload("res://art/peg_white.png"),
@@ -36,13 +38,13 @@ const WHITE := Color(0.95, 0.95, 0.92)
 var pegs: Array[Node2D] = []
 
 # HUD labels
-var goal_value: Label
-var money_value: Label
-var bet_value: Label
-var ante_value: Label
-var balls_value: Label
-var last_value: Label
-var message_label: Label
+var goal_value: Control   # PixelLabel
+var money_value: Control   # PixelLabel
+var bet_value: Control   # PixelLabel
+var ante_value: Control   # PixelLabel
+var balls_value: Control   # PixelLabel
+var last_value: Control   # PixelLabel
+var message_label: Control   # PixelLabel
 
 # Game state
 var money := 0
@@ -53,8 +55,18 @@ var balls_left := 0
 var balls_in_play := 0
 var busted := false
 var ante_over := false
+var goal_announced := false
+
+# Juice
+var fx: Node2D
+var shown_money := 0.0   # what the money label displays; counts up toward `money`
+var prev_money := 0
+var tick_cooldown := 0.0
 
 func _ready() -> void:
+	fx = FxScript.new()
+	add_child(fx)
+	fx.setup(get_viewport_rect().size)
 	build_border_and_tray()
 	build_hud()
 	start_run()
@@ -63,6 +75,8 @@ func _ready() -> void:
 
 func start_run() -> void:
 	money = starting_money
+	shown_money = float(money)
+	prev_money = money
 	bet = 10
 	ante = 1
 	busted = false
@@ -73,9 +87,10 @@ func start_ante() -> void:
 	quota = int(round(first_quota * pow(quota_growth, ante - 1)))
 	balls_left = balls_per_ante
 	ante_over = false
+	goal_announced = false
 	new_board()
 	clamp_bet()
-	message_label.text = "ANTE %d\nReach $%d with %d balls.\nUp/Down bet   A all in   Space drop" % [ante, quota, balls_per_ante]
+	message_label.text = "ANTE %d\nReach $%d with %d balls.\nUP/DOWN BET   A ALL IN\nSPACE DROP   M MUTE   C CALM" % [ante, quota, balls_per_ante]
 	update_status()
 
 func check_ante_end() -> void:
@@ -84,18 +99,26 @@ func check_ante_end() -> void:
 	if money >= quota:
 		ante_over = true
 		message_label.text = "GOAL REACHED!\nNext ante..."
+		fx.ante_cleared(ante)
 		ante += 1
-		await get_tree().create_timer(1.5).timeout
+		await get_tree().create_timer(2.2).timeout
 		start_ante()
 	elif balls_left == 0 or money < BET_STEPS[0]:
 		ante_over = true
 		busted = true
 		var reason := "Out of balls" if balls_left == 0 else "Out of money"
 		message_label.text = "BUSTED!\n%s at ante %d.\nPress R to play again." % [reason, ante]
+		fx.busted(maxi(quota - money, 0), money >= int(quota * 0.75))
 
 func update_status() -> void:
 	goal_value.text = "$%d" % quota
-	money_value.text = "$%d" % money
+	if float(money) < shown_money:
+		shown_money = float(money)   # bets leave instantly
+		pulse(money_value, Color(1.6, 0.5, 0.5))
+	elif money > prev_money:
+		pulse(money_value, Color(1.6, 1.6, 1.6))
+	prev_money = money
+	money_value.text = "$%d" % int(round(shown_money))
 	bet_value.text = "$%d" % bet
 	ante_value.text = str(ante)
 	balls_value.text = str(balls_left)
@@ -117,8 +140,12 @@ func change_bet(direction: int) -> void:
 		for step in BET_STEPS:
 			if step < bet:
 				target = step
+	var old_bet := bet
 	bet = target
 	clamp_bet()
+	if bet != old_bet:
+		fx.bet_changed(direction)
+		pulse(bet_value, Color(1.5, 1.5, 1.5))
 	update_status()
 
 func clamp_bet() -> void:
@@ -135,6 +162,7 @@ func clamp_bet() -> void:
 func drop_ball() -> void:
 	if busted or ante_over or balls_left <= 0 or bet > money:
 		return
+	var all_in := bet >= 100 and bet * 10 >= money * 9
 	money -= bet
 	balls_left -= 1
 	balls_in_play += 1
@@ -143,7 +171,10 @@ func drop_ball() -> void:
 	var center_x := get_viewport_rect().size.x / 2.0
 	ball.position = Vector2(center_x + randf_range(-drop_jitter, drop_jitter), 20)
 	ball.tree_exited.connect(_on_ball_gone.bind(ball))
+	ball.chip_hit.connect(_on_chip_hit)
+	ball.tier_up.connect(_on_tier_up)
 	add_child(ball)
+	fx.ball_dropped(ball.position, all_in)
 	clamp_bet()
 	update_status()
 
@@ -170,6 +201,10 @@ func _on_tray_entered(body: Node2D) -> void:
 		last_value.text = "x%.3f" % mult
 		message_label.text = "$%d bet  x%.3f\nPaid $%d  (%s%d)" % [ball_bet, mult, payout, sign, net]
 		update_status()
+		fx.landed(body.position, mult, payout, ball_bet, quota)
+		if not goal_announced and money >= quota and balls_in_play > 1:
+			goal_announced = true
+			fx.goal_reached()
 		body.set_meta("settled", true)
 		body.queue_free()
 
@@ -185,9 +220,55 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_A:
 				bet = max(money, BET_STEPS[0])
 				update_status()
+			KEY_M:
+				fx.toggle_mute()
+			KEY_C:
+				fx.toggle_calm()
 			KEY_R:
 				if busted:
 					start_run()
+
+# ---------- Juice ----------
+
+func _process(delta: float) -> void:
+	# Money counts up toward its real value, ticking like a slot machine payout
+	var target := float(money)
+	if absf(shown_money - target) > 0.5:
+		var before := int(shown_money)
+		shown_money = move_toward(shown_money, target, maxf(absf(target - shown_money) * 4.0, 40.0) * delta)
+		money_value.text = "$%d" % int(round(shown_money))
+		tick_cooldown -= delta
+		if tick_cooldown <= 0.0 and int(shown_money) != before:
+			fx.sfx.play("tick", 1.0 + 0.6 * shown_money / maxf(target, 1.0), -8.0)
+			tick_cooldown = 0.05
+	elif shown_money != target:
+		shown_money = target
+		money_value.text = "$%d" % money
+
+func _on_chip_hit(ball: RigidBody2D, chip: String, gain: float) -> void:
+	fx.chip_hit(chip, ball.global_position, gain, ball.hits - 1)
+
+func _on_tier_up(ball: RigidBody2D, tier: int) -> void:
+	fx.tier_up(ball.global_position, tier)
+
+# Quick 1.5x jump plus color flash on a HUD value, in two hard steps (no smooth easing)
+func pulse(label: Control, tint: Color) -> void:
+	label.pivot_offset = label.size / 2.0
+	label.scale = Vector2(1.5, 1.5)
+	label.modulate = tint
+	var tw := label.create_tween()
+	tw.tween_interval(0.07)
+	tw.tween_callback(func(): label.scale = Vector2.ONE)
+	tw.tween_interval(0.09)
+	tw.tween_callback(func(): label.modulate = Color.WHITE)
+
+# Chips pop in row by row when a new board is built
+func pop_in(peg: Node2D, row: int, i: int) -> void:
+	var sprite: Sprite2D = peg.get_node("Sprite2D")
+	sprite.scale = Vector2.ZERO
+	var tw := sprite.create_tween()
+	tw.tween_interval(row * 0.045 + i * 0.008)
+	tw.tween_property(sprite, "scale", Vector2.ONE, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 # ---------- Board building ----------
 
@@ -213,6 +294,10 @@ func new_board() -> void:
 			add_child(peg)
 			set_chip(peg, pick_color())
 			pegs.append(peg)
+			pop_in(peg, row, i)
+
+	for row in rows:
+		get_tree().create_timer(row * 0.045).timeout.connect(fx.peg_pop.bind(row))
 
 	# Make a few random chips black (the rare, highest-value ones)
 	var shuffled := pegs.duplicate()
@@ -282,8 +367,13 @@ func build_hud() -> void:
 	var stats := PanelContainer.new()
 	stats.add_theme_stylebox_override("panel", make_panel_style())
 	stats.custom_minimum_size = Vector2(196, 0)
-	stats.position = Vector2(screen.x - 196 - 12, 12)
 	hud.add_child(stats)
+	stats.anchor_left = 1.0
+	stats.anchor_right = 1.0
+	stats.offset_left = -196 - 12
+	stats.offset_right = -12
+	stats.offset_top = 12
+	stats.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 
 	var grid := GridContainer.new()
 	grid.columns = 3
@@ -305,26 +395,22 @@ func build_hud() -> void:
 	msg.position = Vector2(12, 12)
 	hud.add_child(msg)
 
-	message_label = Label.new()
-	message_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	message_label.add_theme_font_size_override("font_size", 10)
-	message_label.add_theme_color_override("font_color", WHITE)
+	message_label = PixelLabel.new()
 	msg.add_child(message_label)
 
-func add_stat(parent: Node, title: String, color: Color) -> Label:
+func add_stat(parent: Node, title: String, color: Color) -> Control:
 	var box := VBoxContainer.new()
 	box.custom_minimum_size = Vector2(58, 0)
-	box.add_theme_constant_override("separation", 0)
+	box.add_theme_constant_override("separation", 1)
 
-	var title_label := Label.new()
+	var title_label := PixelLabel.new()
 	title_label.text = title
-	title_label.add_theme_font_size_override("font_size", 8)
-	title_label.add_theme_color_override("font_color", TEXT_DIM)
+	title_label.self_modulate = TEXT_DIM
 	box.add_child(title_label)
 
-	var value_label := Label.new()
-	value_label.add_theme_font_size_override("font_size", 14)
-	value_label.add_theme_color_override("font_color", color)
+	var value_label := PixelLabel.new()
+	value_label.px = 2
+	value_label.self_modulate = color
 	box.add_child(value_label)
 
 	parent.add_child(box)
@@ -336,5 +422,6 @@ func make_panel_style() -> StyleBoxFlat:
 	style.border_color = GOLD
 	style.set_border_width_all(2)
 	style.set_corner_radius_all(4)
+	style.anti_aliasing = false   # hard pixel edges
 	style.set_content_margin_all(6)
 	return style
