@@ -56,6 +56,7 @@ func _ready() -> void:
 	contact_monitor = true
 	max_contacts_reported = 4
 	lock_rotation = true
+	can_sleep = false   # a sleeping ball would never get pushed free
 	body_entered.connect(_on_body_entered)
 	var t: Dictionary = TYPES[ball_type]
 	gravity_scale = t["gravity"]
@@ -139,11 +140,17 @@ func _physics_process(delta: float) -> void:
 	if age > max_lifetime or position.y > 400.0 or position.y < -100.0:
 		queue_free()
 		return
-	# If the ball is resting somewhere, give it a small push
-	if linear_velocity.length() < stuck_speed:
+	# If the ball is resting somewhere, push it free. Heavy balls barely bounce and settle on
+	# chips easily, so they get checked sooner and pushed harder (never stuck for 0.5s).
+	var heavy := ball_type == "heavy"
+	var slow := stuck_speed * (3.0 if heavy else 1.0)
+	var wait := 0.2 if heavy else stuck_delay
+	if linear_velocity.length() < slow:
 		stuck_time += delta
-		if stuck_time > stuck_delay:
-			apply_central_impulse(Vector2(randf_range(-40.0, 40.0), -20.0) * mass)
+		if stuck_time > wait:
+			var side := 1.0 if randf() < 0.5 else -1.0
+			var push := randf_range(90.0, 130.0) if heavy else randf_range(20.0, 40.0)
+			linear_velocity = Vector2(side * push, -40.0 if heavy else -20.0)
 			stuck_time = 0.0
 	else:
 		stuck_time = 0.0
