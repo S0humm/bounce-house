@@ -37,9 +37,9 @@ var name_label: Control
 var desc_label: Control
 var prompt: Control
 
-func open(title_text: String, owned: Dictionary, pity: int) -> void:
+func open(title_text: String, owned: Dictionary, pity: int, bag_room := 99) -> void:
 	layer = 8
-	winner = Upgrades.roll(owned, pity)
+	winner = Upgrades.roll(owned, pity, bag_room)
 	var items := []
 	for i in STRIP:
 		items.append(Upgrades.filler(owned))

@@ -20,6 +20,8 @@ const ITEMS := {
 	"bouncy4": {"kind": "ball", "ball": "bouncy", "count": 4, "rarity": "rare",   "icon": "bouncy", "short": "BOUNCY", "name": "4 BOUNCY BALLS", "desc": "+0.03 BONUS ON\nEVERY HIT."},
 	"lucky":   {"kind": "perk", "max": 3, "rarity": "rare",      "icon": "lucky",   "short": "LUCKY",  "name": "LUCKY CHARM",  "desc": "SKULLS TAKE 10%\nLESS EACH."},
 	"gold":    {"kind": "perk", "max": 5, "rarity": "rare",      "icon": "gold",    "short": "GOLD",   "name": "GOLD PLATING", "desc": "+0.01 ON EVERY\nGOOD CHIP."},
+	"limit":   {"kind": "perk", "max": 3, "rarity": "epic",      "icon": "limit",   "short": "LIMIT+1","name": "BALL LIMIT +1", "desc": "+1 BALL EVERY ANTE\nAND +1 BAG SLOT."},
+	"pit666":  {"kind": "perk", "max": 1, "rarity": "legendary", "icon": "666",     "short": "666",    "name": "666",           "desc": "A DEAL FROM THE PIT:\n1 IN 6 BALLS PAY X6.66\n1 IN 6 PAY NOTHING."},
 	"insure":  {"kind": "perk", "max": 1, "rarity": "epic",      "icon": "insure",  "short": "INSURE", "name": "INSURANCE",    "desc": "BALLS NEVER PAY\nBELOW X0.5."},
 	"fire2":   {"kind": "ball", "ball": "fire", "count": 2, "rarity": "epic", "icon": "fire", "short": "FIRE", "name": "2 FIRE BALLS", "desc": "X2 WHEN IT LANDS IF\nIT NEVER HITS A SKULL."},
 	"banana2": {"kind": "ball", "ball": "banana", "count": 2, "rarity": "epic", "icon": "banana", "short": "BANANA", "name": "2 GROS MICHELS", "desc": "A BANANA YOU DROP.\n+X0.50 WHEN IT LANDS."},
@@ -33,11 +35,14 @@ static func icon_texture(id: String) -> Texture2D:
 	var path := "res://art/icons/%s.png" % ITEMS[id]["icon"]
 	return load(path) if ResourceLoader.exists(path) else null
 
-static func available(owned: Dictionary) -> Array:
+# bag_room: how many more special balls you can hold (ball prizes are skipped when it's 0)
+static func available(owned: Dictionary, bag_room := 99) -> Array:
 	var out := []
 	for id in ITEMS:
 		var it: Dictionary = ITEMS[id]
 		if it["kind"] == "perk" and owned.get(id, 0) >= it["max"]:
+			continue
+		if it["kind"] == "ball" and bag_room <= 0:
 			continue
 		out.append(id)
 	return out
@@ -56,13 +61,16 @@ static func _pick(pool: Array, weights: Dictionary) -> String:
 	return pool.back()
 
 # The real roll. pity = crates in a row without epic or better; at 2 the next one is epic+.
-static func roll(owned: Dictionary, pity: int) -> String:
+static func roll(owned: Dictionary, pity: int, bag_room := 99) -> String:
 	var w := {}
 	for r in ORDER:
 		w[r] = RARITIES[r]["weight"]
 	if pity >= 2:
 		w["rare"] = 0.0
-	return _pick(available(owned), w)
+	var pool := available(owned, bag_room)
+	if pool.is_empty():
+		pool = available(owned)   # everything maxed and bag full: still spin (ball prize just won't fit)
+	return _pick(pool, w)
 
 # Filler for the reel: what the strip *looks* like
 static func filler(owned: Dictionary) -> String:
