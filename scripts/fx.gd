@@ -71,10 +71,6 @@ func ante_cleared(ante: int) -> void:
 	sfx.play("ante")
 	popup(Vector2(screen.x / 2.0, 150.0), "ANTE %d CLEARED!" % ante, Color(1.0, 0.85, 0.3), 3, 10.0, 1.6)
 
-func extinct() -> void:
-	sfx.play("womp", 0.8)
-	popup(Vector2(screen.x / 2.0, 200.0), "GROS MICHEL WENT EXTINCT", Color(1.0, 0.9, 0.35), 1, 8.0, 2.0)
-
 func busted(short_by: int, near_miss: bool) -> void:
 	sfx.play("bust")
 	popup(Vector2(screen.x / 2.0, 150.0), "BUSTED", Color(1.0, 0.3, 0.25), 4, 6.0, 2.0)

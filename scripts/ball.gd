@@ -11,11 +11,13 @@ signal tier_up(ball: RigidBody2D, tier: int)
 #   heavy:  falls fast, every good chip counts double (skulls still halve it)
 #   bouncy: springs around and gets +0.03 extra on every hit
 #   ghost:  floats straight through skulls
+#   banana: Gros Michel, a banana you drop; +x0.50 when it lands (added by the board)
 const TYPES := {
 	"normal": {"gravity": 0.7,  "bounce": 0.8,  "friction": 0.01, "mass": 1.0, "gain": 1.0, "max_speed": 420.0, "ring": Color(0, 0, 0, 0)},
 	"heavy":  {"gravity": 1.1,  "bounce": 0.3,  "friction": 0.3, "mass": 4.0, "gain": 2.0, "max_speed": 480.0, "ring": Color(0.6, 0.66, 0.8)},
 	"bouncy": {"gravity": 0.55, "bounce": 0.9,  "friction": 0.0, "mass": 0.8, "gain": 1.0, "max_speed": 230.0, "ring": Color(0.62, 0.95, 0.2)},
 	"ghost":  {"gravity": 0.7,  "bounce": 0.8,  "friction": 0.01, "mass": 1.0, "gain": 1.0, "max_speed": 420.0, "ring": Color(0.55, 0.95, 1.0)},
+	"banana": {"gravity": 0.7,  "bounce": 0.7,  "friction": 0.05, "mass": 1.0, "gain": 1.0, "max_speed": 420.0, "ring": Color(0, 0, 0, 0)},
 }
 const BOUNCY_BONUS := 0.03
 const MIN_MULT := -3.0   # floor, so one cursed ball can't wipe out your whole bankroll
@@ -65,7 +67,13 @@ func _ready() -> void:
 	mat.bounce = t["bounce"]
 	mat.friction = t["friction"]
 	physics_material_override = mat
-	if ball_type != "normal":
+	if ball_type == "banana":
+		# Draw the banana instead of the ball (same round hitbox underneath)
+		var art: Texture2D = load("res://art/icons/banana.png")
+		$Sprite2D.texture = art
+		$Sprite2D.scale = Vector2.ONE * (20.0 / art.get_height())
+		$Sprite2D.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	elif ball_type != "normal":
 		ring = Sprite2D.new()
 		ring.texture = _ring_texture()
 		ring.self_modulate = t["ring"]
@@ -125,6 +133,8 @@ func tier_color() -> Color:
 
 func update_look() -> void:
 	var col := tier_color()
+	if ball_type == "banana":
+		return   # bananas keep their own colors
 	$Sprite2D.modulate = col
 
 # Keep every ball under its top speed so nothing rockets off the board
@@ -135,6 +145,8 @@ func _integrate_forces(state: PhysicsDirectBodyState2D) -> void:
 
 func _physics_process(delta: float) -> void:
 	age += delta
+	if ball_type == "banana":
+		$Sprite2D.rotation += linear_velocity.x * delta * 0.05   # tumbles as it falls
 	# Hard limit: no ball lives forever
 	if age > max_lifetime or position.y > 400.0 or position.y < -100.0:
 		queue_free()

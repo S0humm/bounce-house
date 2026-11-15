@@ -10,9 +10,9 @@ const Upgrades := preload("res://scripts/upgrades.gd")
 const Fmt := preload("res://scripts/fmt.gd")
 
 const MIN_BET := 5
-const BALL_KEYS := ["normal", "heavy", "bouncy", "ghost"]   # keys 1-4
-const BALL_NAMES := {"normal": "NORMAL", "heavy": "HEAVY", "bouncy": "BOUNCY", "ghost": "GHOST"}
-const BALL_TAGS := {"normal": "", "heavy": "H ", "bouncy": "B ", "ghost": "G "}
+const BALL_KEYS := ["normal", "heavy", "bouncy", "ghost", "banana"]   # keys 1-5
+const BALL_NAMES := {"normal": "NORMAL", "heavy": "HEAVY", "bouncy": "BOUNCY", "ghost": "GHOST", "banana": "GROS MICHEL"}
+const BALL_TAGS := {"normal": "", "heavy": "H ", "bouncy": "B ", "ghost": "G ", "banana": "M "}
 const LIVE_ROWS := 5
 
 # Colors
@@ -30,7 +30,6 @@ const WHITE := Color(0.95, 0.95, 0.92)
 @export var top_y := 60
 @export var drop_jitter := 2.0      # tiny random nudge so every drop isn't identical
 @export var starting_money := 100
-@export var balls_per_ante := 5
 @export var first_quota := 200
 @export var quota_growth := 1.75    # goal multiplier per ante during the warm-up
 
@@ -41,7 +40,6 @@ var goal_value: Control
 var money_value: Control
 var bet_value: Control
 var ante_value: Control
-var balls_value: Control
 var last_value: Control
 var message_label: Control
 var live_labels: Array[Control] = []
@@ -59,12 +57,11 @@ var money := 0
 var bet := 10
 var ante := 1
 var quota := 0
-var balls_left := 0
 var busted := false
 var ante_over := false
 var goal_announced := false
 var crate_open := false
-var inventory := {"heavy": 0, "bouncy": 0, "ghost": 0}   # special balls you own
+var inventory := {"heavy": 0, "bouncy": 0, "ghost": 0, "banana": 0}   # special balls you own
 var perks := {}                                            # upgrade id -> stacks
 var pity := 0                                              # crates in a row without epic+
 var selected := "normal"
@@ -95,7 +92,7 @@ func start_run() -> void:
 	bet = 10
 	ante = 1
 	busted = false
-	inventory = {"heavy": 1, "bouncy": 1, "ghost": 0}
+	inventory = {"heavy": 1, "bouncy": 1, "ghost": 0, "banana": 0}
 	perks = {}
 	pity = 0
 	selected = "normal"
@@ -107,17 +104,14 @@ func start_run() -> void:
 
 func start_ante() -> void:
 	quota = quota_for(ante)
-	balls_left = balls_per_ante + perks.get("extra", 0) + (2 if easy() else 0) - (1 if ante >= FEWER_BALLS_FROM else 0)
 	ante_over = false
 	goal_announced = false
 	new_board()
 	clamp_bet()
 	var warn := "\nWARM-UP: NO BALL PAYS\nUNDER X0.8"
-	if ante >= FEWER_BALLS_FROM:
-		warn = "\nMORE SKULLS. 1 LESS BALL."
-	elif ante > EASY_ANTES:
+	if ante > EASY_ANTES:
 		warn = "\nMORE SKULLS, LESS GOLD."
-	message_label.text = "ANTE %d: REACH %s\n%d BALLS%s\nSPACE DROP  1-4 BALL" % [ante, Fmt.money(quota), balls_left, warn]
+	message_label.text = "ANTE %d: REACH %s\nUNLIMITED BALLS%s\nSPACE DROP  1-5 BALL" % [ante, Fmt.money(quota), warn]
 	update_status()
 
 func check_ante_end() -> void:
@@ -127,20 +121,14 @@ func check_ante_end() -> void:
 		ante_over = true
 		message_label.text = "GOAL REACHED!\nOPEN YOUR CRATE..."
 		fx.ante_cleared(ante)
-		if perks.has("banana") and randi() % BANANA_EXTINCT == 0:
-			perks.erase("banana")
-			update_perk_panel()
-			message_label.text = "GOAL REACHED!\nGROS MICHEL WENT EXTINCT.\nOPEN YOUR CRATE..."
-			fx.extinct()
 		await get_tree().create_timer(1.8).timeout
 		await open_crate("ANTE %d CRATE" % ante)
 		ante += 1
 		start_ante()
-	elif balls_left == 0 or money < MIN_BET:
+	elif money < MIN_BET:
 		ante_over = true
 		busted = true
-		var reason := "OUT OF BALLS" if balls_left == 0 else "OUT OF MONEY"
-		message_label.text = "BUSTED!\n%s AT ANTE %d.\nPRESS R TO PLAY AGAIN." % [reason, ante]
+		message_label.text = "BUSTED!\nOUT OF MONEY AT ANTE %d.\nPRESS R TO PLAY AGAIN." % ante
 		fx.busted(maxi(quota - money, 0), money >= int(quota * 0.75))
 
 # Crate spin; resolves when the prize is claimed
@@ -164,8 +152,6 @@ func grant(id: String) -> void:
 	else:
 		perks[id] = perks.get(id, 0) + 1
 		update_perk_panel()
-		if id == "extra" and not ante_over:
-			balls_left += 1
 	update_status()
 
 # Upgrade effects handed to every ball as it drops
@@ -177,20 +163,18 @@ func ball_mods() -> Dictionary:
 
 # ---------- Difficulty ----------
 
-# Antes 1-3 are a warm-up: one or two skulls, extra balls and a x0.5 floor.
+# Antes 1-3 are a warm-up: one or two skulls and a x0.8 floor.
 # From ante 4 the board gets meaner every ante.
 # ---- Difficulty knobs (tweak these) ----
 const EASY_ANTES := 3            # warm-up antes
 const EASY_FLOOR := 0.8          # warm-up: no ball pays under this
 const INSURE_FLOOR := 0.5        # Insurance perk: no ball pays under this
-const BANANA_BONUS := 0.5        # Gros Michel: added to every landing
-const BANANA_EXTINCT := 6        # Gros Michel: 1 in this many chance to go extinct each ante
+const BANANA_BONUS := 0.5        # Gros Michel (banana ball): added to its multiplier when it lands
 const SKULLS_AT_ANTE_4 := 5      # skulls on the first hard ante...
 const SKULLS_PER_ANTE := 2       # ...plus this many more every ante after
 const MAX_SKULLS := 22           # (the board has 52 chips)
 const HARD_QUOTA_GROWTH := 3.0   # after the warm-up each goal is 3x the last
 const CHIP_SHRINK := 0.8         # each hard ante, big chips (25s and 50s) get this much rarer
-const FEWER_BALLS_FROM := 7      # from this ante on, 1 less ball per ante
 
 func skull_count() -> int:
 	if ante <= EASY_ANTES:
@@ -221,7 +205,6 @@ func update_status() -> void:
 	money_value.text = Fmt.money(shown_money)
 	bet_value.text = Fmt.money(bet)
 	ante_value.text = str(ante)
-	balls_value.text = str(balls_left)
 
 # ---------- Betting (buttons: 25%, 1/2, MAX, or type any amount; no upper limit) ----------
 
@@ -314,11 +297,10 @@ func update_bet_input() -> void:
 # ---------- Balls ----------
 
 func drop_ball() -> void:
-	if busted or ante_over or crate_open or balls_left <= 0 or bet > money:
+	if busted or ante_over or crate_open or bet > money:
 		return
 	var all_in := bet >= 100 and bet * 10 >= money * 9
 	money -= bet
-	balls_left -= 1
 	var type := selected
 	if type != "normal":
 		inventory[type] -= 1
@@ -369,7 +351,7 @@ func _on_tray_entered(body: Node2D) -> void:
 	var ball_bet: int = body.get_meta("bet", 0)
 	var mult: float = body.get_multiplier()
 	var notes := []
-	if perks.has("banana"):
+	if body.ball_type == "banana":
 		mult += BANANA_BONUS
 		notes.append("GROS MICHEL")
 	if easy() and mult < EASY_FLOOR:
@@ -418,6 +400,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				select_ball("bouncy")
 			KEY_4:
 				select_ball("ghost")
+			KEY_5:
+				select_ball("banana")
 			KEY_M:
 				fx.toggle_mute()
 			KEY_R:
@@ -572,7 +556,7 @@ func build_hud() -> void:
 		live_box.add_child(row)
 		live_labels.append(row)
 
-	var ball_box := add_box(make_panel(left, 124), "NEXT BALL  (1-4)")
+	var ball_box := add_box(make_panel(left, 124), "NEXT BALL  (1-5)")
 	for type in BALL_KEYS:
 		var b := make_button(ball_box, "", 1, 112, 14, select_ball.bind(type), true)
 		ball_labels[type] = b.get_meta("label")
@@ -587,11 +571,7 @@ func build_hud() -> void:
 	make_panel(right, 120).add_child(stats)
 	goal_value = add_stat(stats, "GOAL", RED)
 	money_value = add_stat(stats, "MONEY", MONEY_GOLD)
-	var pair := HBoxContainer.new()
-	pair.add_theme_constant_override("separation", 0)
-	stats.add_child(pair)
-	ante_value = add_stat(pair, "ANTE", WHITE, 54)
-	balls_value = add_stat(pair, "BALLS", WHITE, 54)
+	ante_value = add_stat(stats, "ANTE", WHITE)
 	last_value = add_stat(stats, "LAST", WHITE)
 
 	# Bet controls: quick buttons, a box to type any amount, and the drop button

@@ -6,6 +6,6 @@ bouncy.png   - Bouncy Ball (2 or 4)
 ghost.png    - Ghost Ball (2)
 lucky.png    - Lucky Charm
 gold.png     - Gold Plating
-extra.png    - Extra Ball
 insure.png   - Insurance
 jackpot.png  - Jackpot
+banana.png   - Gros Michel (already added)
