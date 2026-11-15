@@ -5,6 +5,5 @@ The crate picks each one up automatically by file name; until a file exists the 
 
 limit.png    - Ball Limit +1
 insure.png   - Insurance
-666.png      - 666 (the CloverPit deal)
 
 Already done: banana.png, fire.png, lucky.png, gold.png, jackpot.png

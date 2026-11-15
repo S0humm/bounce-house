@@ -17,8 +17,6 @@ const BALL_TAGS := {"normal": "", "heavy": "H ", "bouncy": "B ", "ghost": "G ", 
 const LIVE_ROWS := 5
 const BALLS_PER_ANTE := 5   # drops per ante, any ball type (+1 per BALL LIMIT perk)
 const BAG_MAX := 5          # most special balls you can hold at once (+1 per BALL LIMIT perk)
-const PIT_WIN := 6.66       # "666" perk: 1 in 6 balls are multiplied by this...
-const PIT_ODDS := 6         # ...and 1 in 6 pay nothing
 
 # Colors
 const PANEL_BG := Color(0.03, 0.08, 0.05, 0.75)
@@ -393,15 +391,6 @@ func _on_tray_entered(body: Node2D) -> void:
 	if mult > 1.0 and perks.has("jackpot"):
 		mult *= 2.0
 		notes.append("JACKPOT X2")
-	# 666 comes last so nothing (insurance, warm-up floor) can save you from the pit
-	if perks.has("pit666"):
-		var roll := randi() % PIT_ODDS
-		if roll == 0:
-			mult *= PIT_WIN
-			notes.append("666: X6.66!")
-		elif roll == 1:
-			mult = 0.0
-			notes.append("666: THE PIT TOOK IT")
 	var payout := int(round(ball_bet * mult))
 	money = maxi(money + payout, 0)
 	var net := payout - ball_bet
