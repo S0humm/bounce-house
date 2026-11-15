@@ -54,10 +54,6 @@ var live_empty: Control
 var ball_labels := {}       # NEXT BALL rows: ">1" key labels
 var ball_counts := {}       # ...the "X8" counts
 var ball_icon_rects := {}   # ...and the ball pictures
-var drop_x := 320.0         # where the next ball drops (aim with the arrow keys)
-var preview: Sprite2D       # see-through copy of the next ball at the drop point
-const AIM_SPEED := 200.0
-const AIM_MARGIN := 18.0
 var perk_box: VBoxContainer
 var bet_input: Button          # click to type an exact bet
 var bet_input_label: Control
@@ -94,11 +90,6 @@ func _ready() -> void:
 	add_child(fx)
 	fx.setup(get_viewport_rect().size)
 	build_walls_and_tray()
-	drop_x = get_viewport_rect().size.x / 2.0
-	preview = Sprite2D.new()
-	preview.modulate = Color(1, 1, 1, 0.5)
-	preview.z_index = 5
-	add_child(preview)
 	build_hud()
 	start_run()
 
@@ -131,7 +122,7 @@ func start_ante() -> void:
 	var warn := "\nWARM-UP: NO BALL PAYS\nUNDER X0.8"
 	if ante > EASY_ANTES:
 		warn = "\nMORE SKULLS, LESS GOLD."
-	message_label.text = "ANTE %d: REACH %s\n%d BALLS%s\n<> AIM  UP/DOWN BALL\nSPACE DROP" % [ante, Fmt.money(quota), balls_left, warn]
+	message_label.text = "ANTE %d: REACH %s\n%d BALLS%s\nUP/DOWN BALL\nSPACE DROP" % [ante, Fmt.money(quota), balls_left, warn]
 	update_status()
 
 func check_ante_end() -> void:
@@ -335,7 +326,8 @@ func drop_ball() -> void:
 		if inventory[type] <= 0:
 			selected = "normal"
 		update_ball_panel()
-	var ball := spawn_ball(type, Vector2(drop_x + randf_range(-drop_jitter, drop_jitter), 20), bet)
+	var center_x := get_viewport_rect().size.x / 2.0
+	var ball := spawn_ball(type, Vector2(center_x + randf_range(-drop_jitter, drop_jitter), 20), bet)
 	fx.ball_dropped(ball.position, all_in)
 	clamp_bet()
 	update_status()
@@ -477,17 +469,6 @@ func select_ball(type: String) -> void:
 # ---------- Juice ----------
 
 func _process(delta: float) -> void:
-	# Aim: hold left/right to slide the drop point along the top
-	if not typing and not crate_open:
-		var dir := int(Input.is_key_pressed(KEY_RIGHT)) - int(Input.is_key_pressed(KEY_LEFT))
-		if dir != 0:
-			var w := get_viewport_rect().size.x
-			drop_x = clampf(drop_x + dir * AIM_SPEED * delta, AIM_MARGIN, w - AIM_MARGIN)
-	preview.position = Vector2(roundf(drop_x), 20)
-	var tex := BallIcons.icon(selected)
-	preview.texture = tex
-	preview.scale = Vector2.ONE * minf(1.0, 16.0 / maxf(tex.get_width(), tex.get_height()))
-	preview.visible = not busted and not ante_over
 	# Money counts up toward its real value, ticking like a slot machine payout
 	var target := float(money)
 	if absf(shown_money - target) > 0.5:
