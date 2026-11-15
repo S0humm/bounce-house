@@ -12,10 +12,10 @@ signal tier_up(ball: RigidBody2D, tier: int)
 #   bouncy: springs around and gets +0.03 extra on every hit
 #   ghost:  floats straight through skulls
 const TYPES := {
-	"normal": {"gravity": 0.7,  "bounce": 0.8,  "friction": 0.1, "mass": 1.0, "gain": 1.0, "max_speed": 420.0, "ring": Color(0, 0, 0, 0)},
+	"normal": {"gravity": 0.7,  "bounce": 0.8,  "friction": 0.01, "mass": 1.0, "gain": 1.0, "max_speed": 420.0, "ring": Color(0, 0, 0, 0)},
 	"heavy":  {"gravity": 1.1,  "bounce": 0.3,  "friction": 0.3, "mass": 4.0, "gain": 2.0, "max_speed": 480.0, "ring": Color(0.6, 0.66, 0.8)},
 	"bouncy": {"gravity": 0.55, "bounce": 0.9,  "friction": 0.0, "mass": 0.8, "gain": 1.0, "max_speed": 230.0, "ring": Color(0.62, 0.95, 0.2)},
-	"ghost":  {"gravity": 0.7,  "bounce": 0.8,  "friction": 0.1, "mass": 1.0, "gain": 1.0, "max_speed": 420.0, "ring": Color(0.55, 0.95, 1.0)},
+	"ghost":  {"gravity": 0.7,  "bounce": 0.8,  "friction": 0.01, "mass": 1.0, "gain": 1.0, "max_speed": 420.0, "ring": Color(0.55, 0.95, 1.0)},
 }
 const BOUNCY_BONUS := 0.03
 const MIN_MULT := -3.0   # floor, so one cursed ball can't wipe out your whole bankroll

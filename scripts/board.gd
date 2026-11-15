@@ -16,8 +16,7 @@ const BALL_TAGS := {"normal": "", "heavy": "H ", "bouncy": "B ", "ghost": "G "}
 const LIVE_ROWS := 5
 
 # Colors
-const GOLD := Color(0.85, 0.65, 0.2)
-const PANEL_BG := Color(0.07, 0.09, 0.08, 0.92)
+const PANEL_BG := Color(0.03, 0.08, 0.05, 0.75)
 const TEXT_DIM := Color(0.7, 0.7, 0.65)
 const DIM := Color(0.45, 0.45, 0.42)
 const RED := Color(1.0, 0.38, 0.32)
@@ -78,6 +77,8 @@ var prev_money := 0
 var tick_cooldown := 0.0
 
 func _ready() -> void:
+	# Never draw Godot's blue debug outlines around chips and walls, even if the editor option is on
+	get_tree().debug_collisions_hint = false
 	fx = FxScript.new()
 	add_child(fx)
 	fx.setup(get_viewport_rect().size)
@@ -158,8 +159,6 @@ func grant(id: String) -> void:
 		update_perk_panel()
 		if id == "extra" and not ante_over:
 			balls_left += 1
-		if id == "midas" and not ante_over:
-			add_midas(3)
 	update_status()
 
 # Upgrade effects handed to every ball as it drops
@@ -351,9 +350,6 @@ func _on_tray_entered(body: Node2D) -> void:
 	if mult < EASY_FLOOR and perks.has("insure"):
 		mult = EASY_FLOOR
 		notes.append("INSURED")
-	if mult > 1.0 and perks.has("roller"):
-		mult *= pow(1.25, perks["roller"])
-		notes.append("HIGH ROLLER")
 	if mult > 1.0 and perks.has("jackpot"):
 		mult *= 2.0
 		notes.append("JACKPOT X2")
@@ -396,8 +392,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				select_ball("ghost")
 			KEY_M:
 				fx.toggle_mute()
-			KEY_C:
-				fx.toggle_calm()
 			KEY_R:
 				if busted:
 					start_run()
@@ -457,14 +451,6 @@ func pulse(label: Control, tint: Color) -> void:
 	tw.tween_interval(0.09)
 	tw.tween_callback(func(): label.modulate = Color.WHITE)
 
-# Chips pop in row by row when a new board is built
-func pop_in(peg: Node2D, row: int, i: int) -> void:
-	var sprite: Sprite2D = peg.get_node("Sprite2D")
-	sprite.scale = Vector2.ZERO
-	var tw := sprite.create_tween()
-	tw.tween_interval(row * 0.045 + i * 0.008)
-	tw.tween_property(sprite, "scale", Vector2.ONE, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-
 # ---------- Board building ----------
 
 # Staggered board, re-rolled every ante. Later antes bring more skulls.
@@ -488,10 +474,6 @@ func new_board() -> void:
 			peg.set_meta("row", row)
 			set_chip(peg, Chips.pick_positive())
 			pegs.append(peg)
-			pop_in(peg, row, i)
-
-	for row in rows:
-		get_tree().create_timer(row * 0.045).timeout.connect(fx.peg_pop.bind(row))
 
 	# Skulls: one is always on the bottom row, the rest anywhere below the top row
 	var bottom := pegs.filter(func(p): return p.get_meta("row") == rows - 1)
@@ -500,13 +482,6 @@ func new_board() -> void:
 	open.shuffle()
 	for i in mini(skull_count() - 1, open.size()):
 		set_chip(open[i], "black")
-	add_midas(3 * perks.get("midas", 0))
-
-func add_midas(n: int) -> void:
-	var good := pegs.filter(func(p): return p.get_meta("chip") in ["c1", "c5", "c10"])
-	good.shuffle()
-	for i in mini(n, good.size()):
-		set_chip(good[i], "c50")
 
 func set_chip(peg: Node2D, chip: String) -> void:
 	peg.get_node("Sprite2D").texture = Chips.texture(chip)
@@ -656,22 +631,15 @@ func make_button(parent: Node, text: String, px: int, w: int, h: int, action: Ca
 	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	for state in ["normal", "hover", "pressed", "disabled"]:
 		var st := StyleBoxFlat.new()
-		st.anti_aliasing = false
-		st.set_corner_radius_all(2)
-		st.set_border_width_all(0 if flat and state == "normal" else 1)
 		match state:
 			"normal":
-				st.bg_color = Color(0, 0, 0, 0) if flat else Color(0.14, 0.16, 0.15)
-				st.border_color = GOLD.darkened(0.3)
+				st.bg_color = Color(0, 0, 0, 0) if flat else Color(1, 1, 1, 0.08)
 			"hover":
-				st.bg_color = Color(0.22, 0.24, 0.2)
-				st.border_color = GOLD
+				st.bg_color = Color(1, 1, 1, 0.16)
 			"pressed":
-				st.bg_color = GOLD.darkened(0.35)
-				st.border_color = Color(1.0, 0.9, 0.5)
+				st.bg_color = Color(1, 1, 1, 0.3)
 			"disabled":
-				st.bg_color = Color(0.1, 0.1, 0.1)
-				st.border_color = DIM
+				st.bg_color = Color(0, 0, 0, 0.2)
 		b.add_theme_stylebox_override(state, st)
 	var label := PixelLabel.new()
 	label.px = px
@@ -694,12 +662,8 @@ func make_button(parent: Node, text: String, px: int, w: int, h: int, action: Ca
 	return b
 
 func make_panel_style() -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
+	var style := StyleBoxFlat.new()   # flat dark box, no border
 	style.bg_color = PANEL_BG
-	style.border_color = GOLD
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(4)
-	style.anti_aliasing = false   # hard pixel edges
 	style.set_content_margin_all(6)
 	return style
 
