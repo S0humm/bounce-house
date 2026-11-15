@@ -7,6 +7,7 @@ signal finished(item: String)
 
 const Upgrades := preload("res://scripts/upgrades.gd")
 const PixelLabel := preload("res://scripts/pixel_label.gd")
+const Icons := preload("res://scripts/icons.gd")
 
 const TILE := 48          # distance between tiles on the strip
 const TILE_W := 44
@@ -165,12 +166,19 @@ func _tile(id: String) -> Control:
 	band.size = Vector2(TILE_W - 4, 6)
 	band.color = col
 	tile.add_child(band)
-	var icon := PixelLabel.new()
-	icon.px = 2
-	icon.text = it["icon"]
-	icon.self_modulate = col.lightened(0.35)
+	var icon := TextureRect.new()
+	icon.texture = Icons.texture(it["icon"])
+	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.size = Vector2(32, 32)
+	icon.position = Vector2(6, 9)
 	tile.add_child(icon)
-	icon.position = Vector2(floorf((TILE_W - icon.size.x) / 2.0), 16)
+	if it["kind"] == "ball":
+		var badge := PixelLabel.new()
+		badge.text = "X%d" % it["count"]
+		badge.self_modulate = Color.WHITE
+		tile.add_child(badge)
+		badge.position = Vector2(TILE_W - badge.size.x - 3, 3)
 	return tile
 
 func _label(text: String, px: int, color: Color) -> Control:

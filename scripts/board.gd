@@ -49,6 +49,11 @@ var live_labels: Array[Control] = []
 var live_empty: Control
 var ball_labels := {}
 var perk_box: VBoxContainer
+var bet_input: Button          # click to type an exact bet
+var bet_input_label: Control
+var typing := false
+var typed := ""
+var caret_time := 0.0
 
 # Game state
 var money := 0
@@ -101,17 +106,15 @@ func start_run() -> void:
 
 func start_ante() -> void:
 	quota = int(round(first_quota * pow(quota_growth, ante - 1)))
-	balls_left = balls_per_ante + perks.get("extra", 0)
+	balls_left = balls_per_ante + perks.get("extra", 0) + (2 if easy() else 0)
 	ante_over = false
 	goal_announced = false
 	new_board()
 	clamp_bet()
-	var warn := ""
-	if ante == 2:
-		warn = "\nNEW: MINUS CHIPS!"
-	elif ante > 2:
-		warn = "\nMORE SKULLS AND MINUS."
-	message_label.text = "ANTE %d: REACH %s\n%d BALLS%s\nUP/DOWN BET  A ALL IN\nSPACE DROP  1-4 BALL" % [ante, Fmt.money(quota), balls_left, warn]
+	var warn := "\nWARM-UP: NO BALL PAYS\nUNDER X0.5"
+	if ante > EASY_ANTES:
+		warn = "\nMORE SKULLS EVERY ANTE."
+	message_label.text = "ANTE %d: REACH %s\n%d BALLS%s\nSPACE DROP  1-4 BALL" % [ante, Fmt.money(quota), balls_left, warn]
 	update_status()
 
 func check_ante_end() -> void:
@@ -162,18 +165,24 @@ func grant(id: String) -> void:
 # Upgrade effects handed to every ball as it drops
 func ball_mods() -> Dictionary:
 	return {
-		"black_cut": maxf(0.75 - 0.15 * perks.get("lucky", 0), 0.0),
-		"neg_scale": pow(0.6, perks.get("skin", 0)),
+		"black_cut": maxf(0.5 - 0.1 * perks.get("lucky", 0), 0.0),
 		"gold_add": 0.01 * perks.get("gold", 0),
 	}
 
 # ---------- Difficulty ----------
 
-func skull_count() -> int:
-	return mini(3 + int((ante - 1) * 0.6), 12)
+# Antes 1-3 are a warm-up: one or two skulls, extra balls and a x0.5 floor.
+# From ante 4 the board gets meaner every ante.
+const EASY_ANTES := 3
+const EASY_FLOOR := 0.5
 
-func minus_count() -> int:
-	return 0 if ante < 2 else mini(4 + 3 * (ante - 2), 24)
+func skull_count() -> int:
+	if ante <= EASY_ANTES:
+		return [1, 2, 2][ante - 1]
+	return mini(3 + int((ante - 4) * 0.7), 12)
+
+func easy() -> bool:
+	return ante <= EASY_ANTES
 
 # ---------- Status ----------
 
@@ -190,44 +199,93 @@ func update_status() -> void:
 	ante_value.text = str(ante)
 	balls_value.text = str(balls_left)
 
-# ---------- Betting (no cap: 5, 10, 25, 50, 100, 250, 500, 1K ... forever) ----------
+# ---------- Betting (buttons: 25%, 1/2, MAX, or type any amount; no upper limit) ----------
 
-func bet_step_up(b: int) -> int:
-	var step := 5
-	var i := 0
-	while step <= b:
-		i += 1
-		step = [5, 10, 25][i % 3] * int(pow(10, i / 3))
-	return step
-
-func bet_step_down(b: int) -> int:
-	var best := MIN_BET
-	var step := 5
-	var i := 0
-	while step < b:
-		best = step
-		i += 1
-		step = [5, 10, 25][i % 3] * int(pow(10, i / 3))
-	return best
-
-func change_bet(direction: int) -> void:
+func set_bet(amount: int) -> void:
+	if typing:
+		typing = false
+		update_bet_input()
 	var old_bet := bet
-	if direction > 0:
-		var up := bet_step_up(bet)
-		bet = up if up <= money else bet
-	else:
-		bet = bet_step_down(bet)
+	bet = amount
 	clamp_bet()
 	if bet != old_bet:
-		fx.bet_changed(direction)
-		pulse(bet_value, Color(1.5, 1.5, 1.5))
+		fx.bet_changed(1 if bet > old_bet else -1)
+	pulse(bet_value, Color(1.5, 1.5, 1.5))
 	update_status()
 
+func bet_fraction(f: float) -> void:
+	set_bet(int(floor(money * f)))
+
 func clamp_bet() -> void:
-	# You can never bet more than you have
-	if bet > money:
-		bet = bet_step_down(money + 1)
-	bet = maxi(bet, MIN_BET)
+	# You can never bet more than you have, or less than the table minimum
+	bet = clampi(bet, MIN_BET, maxi(money, MIN_BET))
+
+func start_typing() -> void:
+	if crate_open:
+		return
+	if typing:
+		stop_typing(true)   # clicking the box again confirms
+		return
+	typing = true
+	typed = ""
+	fx.sfx.play("pop", 1.2)
+	update_bet_input()
+
+func stop_typing(apply: bool) -> void:
+	if not typing:
+		return
+	typing = false
+	if apply and typed != "":
+		set_bet(parse_amount(typed))
+	update_bet_input()
+
+# "2500", "15k", "1.5m" -> dollars
+func parse_amount(text: String) -> int:
+	var scale := 1.0
+	var t := text
+	if t.ends_with("K"):
+		scale = 1e3
+		t = t.left(-1)
+	elif t.ends_with("M"):
+		scale = 1e6
+		t = t.left(-1)
+	elif t.ends_with("B"):
+		scale = 1e9
+		t = t.left(-1)
+	if not t.is_valid_float():
+		return bet
+	return int(t.to_float() * scale)
+
+func type_key(event: InputEventKey) -> void:
+	match event.keycode:
+		KEY_ENTER, KEY_KP_ENTER:
+			stop_typing(true)
+			return
+		KEY_ESCAPE:
+			stop_typing(false)
+			return
+		KEY_BACKSPACE:
+			typed = typed.left(-1)
+		_:
+			var ch := String.chr(event.unicode).to_upper() if event.unicode > 0 else ""
+			var has_suffix := typed.ends_with("K") or typed.ends_with("M") or typed.ends_with("B")
+			if ch.is_valid_int() and not has_suffix and typed.length() < 14:
+				typed += ch
+			elif ch == "." and not "." in typed and not has_suffix:
+				typed += ch
+			elif ch in ["K", "M", "B"] and typed != "" and not has_suffix:
+				typed += ch
+	fx.sfx.play("tick", 1.3, -6.0)
+	update_bet_input()
+
+func update_bet_input() -> void:
+	if typing:
+		var caret := "_" if fmod(caret_time, 0.8) < 0.4 else " "
+		bet_input_label.text = "$" + typed + caret
+		bet_input_label.self_modulate = Color(1.0, 0.95, 0.7)
+	else:
+		bet_input_label.text = "TYPE A BET"
+		bet_input_label.self_modulate = TEXT_DIM
 
 # ---------- Balls ----------
 
@@ -255,7 +313,7 @@ func spawn_ball(type: String, pos: Vector2, ball_bet: int) -> RigidBody2D:
 	ball.set_meta("bet", ball_bet)
 	ball.position = pos
 	if type == "ghost":
-		# Ghosts don't even touch skulls and minus chips
+		# Ghosts don't even touch skulls
 		for p in pegs:
 			if Chips.is_bad(p.get_meta("chip")):
 				ball.add_collision_exception_with(p)
@@ -287,8 +345,11 @@ func _on_tray_entered(body: Node2D) -> void:
 	var ball_bet: int = body.get_meta("bet", 0)
 	var mult: float = body.get_multiplier()
 	var notes := []
-	if mult < 0.0 and perks.has("insure"):
-		mult = 0.0
+	if easy() and mult < EASY_FLOOR:
+		mult = EASY_FLOOR
+		notes.append("WARM-UP")
+	if mult < EASY_FLOOR and perks.has("insure"):
+		mult = EASY_FLOOR
 		notes.append("INSURED")
 	if mult > 1.0 and perks.has("roller"):
 		mult *= pow(1.25, perks["roller"])
@@ -315,19 +376,16 @@ func _on_tray_entered(body: Node2D) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if crate_open:
 		return
+	if typing and event is InputEventKey and event.pressed:
+		type_key(event)
+		get_viewport().set_input_as_handled()
+		return
+	if typing and event is InputEventMouseButton and event.pressed:
+		stop_typing(true)   # clicking anywhere else confirms the typed bet
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_SPACE:
 				drop_ball()
-			KEY_UP:
-				change_bet(1)
-			KEY_DOWN:
-				change_bet(-1)
-			KEY_A:
-				if money >= MIN_BET:
-					bet = money
-					pulse(bet_value, Color(1.6, 0.6, 0.5))
-					update_status()
 			KEY_1:
 				select_ball("normal")
 			KEY_2:
@@ -372,6 +430,9 @@ func _process(delta: float) -> void:
 		shown_money = target
 		money_value.text = Fmt.money(money)
 	update_live_panel()
+	if typing:
+		caret_time += delta
+		update_bet_input()
 
 func _on_chip_hit(ball: RigidBody2D, peg: Node, chip: String, gain: float) -> void:
 	var smashed: bool = chip == "black" and ball.ball_type == "heavy"
@@ -406,7 +467,7 @@ func pop_in(peg: Node2D, row: int, i: int) -> void:
 
 # ---------- Board building ----------
 
-# Staggered board, re-rolled every ante. Later antes bring more skulls and minus chips.
+# Staggered board, re-rolled every ante. Later antes bring more skulls.
 func new_board() -> void:
 	for peg in pegs:
 		peg.queue_free()
@@ -439,11 +500,6 @@ func new_board() -> void:
 	open.shuffle()
 	for i in mini(skull_count() - 1, open.size()):
 		set_chip(open[i], "black")
-	# Minus chips
-	open = open.filter(func(p): return p.get_meta("chip") != "black")
-	open.shuffle()
-	for i in mini(minus_count(), open.size()):
-		set_chip(open[i], Chips.pick_negative(ante))
 	add_midas(3 * perks.get("midas", 0))
 
 func add_midas(n: int) -> void:
@@ -516,11 +572,10 @@ func build_hud() -> void:
 		live_box.add_child(row)
 		live_labels.append(row)
 
-	var ball_box := add_box(make_panel(left, 124), "NEXT BALL")
+	var ball_box := add_box(make_panel(left, 124), "NEXT BALL  (1-4)")
 	for type in BALL_KEYS:
-		var row := PixelLabel.new()
-		ball_box.add_child(row)
-		ball_labels[type] = row
+		var b := make_button(ball_box, "", 1, 112, 14, select_ball.bind(type), true)
+		ball_labels[type] = b.get_meta("label")
 
 	var right := VBoxContainer.new()
 	right.position = Vector2(screen.x - 12 - 120, 12)
@@ -532,13 +587,28 @@ func build_hud() -> void:
 	make_panel(right, 120).add_child(stats)
 	goal_value = add_stat(stats, "GOAL", RED)
 	money_value = add_stat(stats, "MONEY", MONEY_GOLD)
-	bet_value = add_stat(stats, "BET", BLUE)
 	var pair := HBoxContainer.new()
 	pair.add_theme_constant_override("separation", 0)
 	stats.add_child(pair)
 	ante_value = add_stat(pair, "ANTE", WHITE, 54)
 	balls_value = add_stat(pair, "BALLS", WHITE, 54)
 	last_value = add_stat(stats, "LAST", WHITE)
+
+	# Bet controls: quick buttons, a box to type any amount, and the drop button
+	var bets := VBoxContainer.new()
+	bets.add_theme_constant_override("separation", 3)
+	make_panel(right, 120).add_child(bets)
+	bet_value = add_stat(bets, "BET", BLUE)
+	var quick := HBoxContainer.new()
+	quick.add_theme_constant_override("separation", 3)
+	bets.add_child(quick)
+	make_button(quick, "25%", 1, 34, 14, bet_fraction.bind(0.25))
+	make_button(quick, "1/2", 1, 34, 14, bet_fraction.bind(0.5))
+	make_button(quick, "MAX", 1, 34, 14, bet_fraction.bind(1.0))
+	bet_input = make_button(bets, "", 1, 108, 14, start_typing)
+	bet_input_label = bet_input.get_meta("label")
+	update_bet_input()
+	make_button(bets, "DROP", 2, 108, 22, drop_ball)
 
 	perk_box = add_box(make_panel(right, 120), "PERKS")
 	update_ball_panel()
@@ -577,6 +647,51 @@ func add_stat(parent: Node, title: String, color: Color, width := 0) -> Control:
 	box.add_child(value_label)
 	parent.add_child(box)
 	return value_label
+
+# Pixel-style button with a pixel-font label; never takes keyboard focus (so SPACE stays "drop")
+func make_button(parent: Node, text: String, px: int, w: int, h: int, action: Callable, flat := false) -> Button:
+	var b := Button.new()
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(w, h)
+	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		var st := StyleBoxFlat.new()
+		st.anti_aliasing = false
+		st.set_corner_radius_all(2)
+		st.set_border_width_all(0 if flat and state == "normal" else 1)
+		match state:
+			"normal":
+				st.bg_color = Color(0, 0, 0, 0) if flat else Color(0.14, 0.16, 0.15)
+				st.border_color = GOLD.darkened(0.3)
+			"hover":
+				st.bg_color = Color(0.22, 0.24, 0.2)
+				st.border_color = GOLD
+			"pressed":
+				st.bg_color = GOLD.darkened(0.35)
+				st.border_color = Color(1.0, 0.9, 0.5)
+			"disabled":
+				st.bg_color = Color(0.1, 0.1, 0.1)
+				st.border_color = DIM
+		b.add_theme_stylebox_override(state, st)
+	var label := PixelLabel.new()
+	label.px = px
+	label.text = text
+	label.self_modulate = WHITE
+	if flat:
+		label.position = Vector2(3, 3)   # list rows read best left-aligned
+		b.add_child(label)
+	else:
+		var center := CenterContainer.new()
+		center.set_anchors_preset(Control.PRESET_FULL_RECT)
+		center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.add_child(center)
+		center.add_child(label)
+	b.set_meta("label", label)
+	b.pressed.connect(func():
+		fx.sfx.play("pop", 1.1)
+		action.call())
+	parent.add_child(b)
+	return b
 
 func make_panel_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()

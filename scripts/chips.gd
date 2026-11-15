@@ -2,7 +2,7 @@ extends RefCounted
 ## Every chip type in one place: what it does, how often it shows up, and its art.
 ## Chip art is drawn in code (22x22 pixel art), so there are no image files to import.
 
-# kind: "add" adds to the multiplier, "neg" subtracts from it, "black" takes 75% of it away
+# kind: "add" adds to the multiplier, "black" (skull) takes half of it away
 const TYPES := {
 	"c1":    {"kind": "add", "add": 0.01, "weight": 50.0, "label": "1",   "color": Color(0.92, 0.2, 0.22)},
 	"c5":    {"kind": "add", "add": 0.05, "weight": 27.0, "label": "5",   "color": Color(1.0, 0.55, 0.12)},
@@ -10,9 +10,6 @@ const TYPES := {
 	"c25":   {"kind": "add", "add": 0.25, "weight": 6.5,  "label": "25",  "color": Color(0.18, 0.5, 1.0)},
 	"c50":   {"kind": "add", "add": 0.50, "weight": 2.5,  "label": "50",  "color": Color(0.2, 0.82, 0.35)},
 	"c100":  {"kind": "add", "add": 1.00, "weight": 1.0,  "label": "100", "color": Color(0.6, 0.3, 0.95)},
-	"n5":    {"kind": "neg", "add": -0.05, "label": "-5",  "color": Color(0.5, 0.07, 0.13)},
-	"n10":   {"kind": "neg", "add": -0.10, "label": "-10", "color": Color(0.5, 0.07, 0.13)},
-	"n25":   {"kind": "neg", "add": -0.25, "label": "-25", "color": Color(0.5, 0.07, 0.13)},
 	"black": {"kind": "black", "label": "K", "color": Color(0.13, 0.12, 0.16)},
 }
 const POSITIVE := ["c1", "c5", "c10", "c25", "c50", "c100"]
@@ -24,7 +21,6 @@ const GLYPHS := {
 	"I": [".#.", "##.", ".#.", ".#.", "###"],   # wide 1, used when "1" is alone
 	"2": ["###", "..#", "###", "#..", "###"],
 	"5": ["###", "#..", "###", "..#", "###"],
-	"-": ["..", "..", "##", "..", ".."],
 	"K": [".###.", "#.#.#", "#####", ".###.", ".#.#."],
 }
 
@@ -51,17 +47,6 @@ static func pick_positive() -> String:
 			return k
 	return "c1"
 
-# Negative chips get nastier as the antes go up
-static func pick_negative(ante: int) -> String:
-	var r := randf()
-	var big := clampf(0.05 * (ante - 2), 0.0, 0.45)
-	var mid := clampf(0.25 + 0.04 * (ante - 2), 0.25, 0.4)
-	if r < big:
-		return "n25"
-	if r < big + mid:
-		return "n10"
-	return "n5"
-
 static func texture(chip: String) -> ImageTexture:
 	if not _cache.has(chip):
 		_cache[chip] = ImageTexture.create_from_image(_draw(chip))
@@ -82,11 +67,6 @@ static func _draw(chip: String) -> Image:
 			center = Color(0.27, 0.25, 0.31)
 			ink = Color(0.96, 0.93, 0.86)
 			outline = Color(0.03, 0.02, 0.04)
-		"neg":
-			stripe = Color(0.16, 0.03, 0.06)
-			center = Color(0.2, 0.04, 0.08)
-			ink = Color(1.0, 0.4, 0.42)
-			outline = Color(0.1, 0.01, 0.03)
 	var side := base.darkened(0.35) if t["kind"] == "add" else base.lightened(0.12)
 
 	var img := Image.create(22, 22, false, Image.FORMAT_RGBA8)

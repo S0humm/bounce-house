@@ -262,15 +262,10 @@ func chip_hit(chip: String, pos: Vector2, gain: float, combo: int, smashed := fa
 				return
 			sfx.play("womp")
 			burst(pos, Color(0.6, 0.15, 0.2), 14, 110.0, 0.5, 1.4, 200.0)
-			popup(pos + Vector2(0, -16), "-75%", Color(1.0, 0.35, 0.3), 2, 18.0, 0.7)
+			popup(pos + Vector2(0, -16), "-50%", Color(1.0, 0.35, 0.3), 2, 18.0, 0.7)
 			add_trauma(0.3)
 			hit_stop(0.05)
 			flash(Color(0.8, 0.05, 0.05), 0.22, 0.25)
-		"neg":
-			sfx.play("lose", 1.3 - 0.05 * clampi(combo, 0, 6), -3.0)
-			burst(pos, Color(1.0, 0.3, 0.3), 6, 60.0, 0.35, 1.0, 120.0)
-			popup(pos + Vector2(0, -14), "%.2f" % gain, Color(1.0, 0.4, 0.4), 1)
-			add_trauma(0.06)
 		_:
 			# Bigger chips: bigger sound, more sparks, bigger number
 			var add: float = info["add"]

@@ -8,9 +8,9 @@ signal tier_up(ball: RigidBody2D, tier: int)
 
 # Ball types:
 #   normal: the standard ball
-#   heavy:  falls fast, every chip counts double (the bad ones too), smashes skulls into good chips
+#   heavy:  falls fast, every chip counts double, smashes skulls into good chips
 #   bouncy: springs around and gets +0.03 extra on every hit
-#   ghost:  floats straight through skulls and minus chips
+#   ghost:  floats straight through skulls
 const TYPES := {
 	"normal": {"gravity": 0.7,  "bounce": 0.8,  "friction": 0.1, "mass": 1.0, "gain": 1.0, "max_speed": 420.0, "ring": Color(0, 0, 0, 0)},
 	"heavy":  {"gravity": 1.1,  "bounce": 0.3,  "friction": 0.3, "mass": 4.0, "gain": 2.0, "max_speed": 480.0, "ring": Color(0.6, 0.66, 0.8)},
@@ -20,7 +20,7 @@ const TYPES := {
 const BOUNCY_BONUS := 0.03
 const MIN_MULT := -3.0   # floor, so one cursed ball can't wipe out your whole bankroll
 
-# Multiplier needed to reach each glow tier (the ball and its trail change color)
+# Multiplier needed to reach each glow tier (the ball changes color)
 const TIER_STEPS := [1.0, 2.0, 4.0, 7.0]
 const TIER_COLORS := [
 	Color(1.0, 1.0, 1.0),
@@ -37,22 +37,19 @@ const NEGATIVE_COLOR := Color(1.0, 0.3, 0.3)
 
 var ball_type := "normal"
 # Upgrade effects, filled in by the board before the ball drops
-var black_cut := 0.75     # share of the multiplier a skull takes away
-var neg_scale := 1.0      # how hard minus chips hit
+var black_cut := 0.5      # share of the multiplier a skull takes away
 var gold_add := 0.0       # extra on every good chip
 var age := 0.0
 var stuck_time := 0.0
 var bonus := 0.0      # running multiplier, starts at x0.00
 var hits := 0         # chips touched so far (drives the rising pitch)
 var tier := 0
-var trail: CPUParticles2D
 var ring: Sprite2D
 
 # Call before adding the ball to the scene
 func setup(type_name: String, mods: Dictionary) -> void:
 	ball_type = type_name if TYPES.has(type_name) else "normal"
-	black_cut = mods.get("black_cut", 0.75)
-	neg_scale = mods.get("neg_scale", 1.0)
+	black_cut = mods.get("black_cut", 0.5)
 	gold_add = mods.get("gold_add", 0.0)
 
 func _ready() -> void:
@@ -67,7 +64,6 @@ func _ready() -> void:
 	mat.bounce = t["bounce"]
 	mat.friction = t["friction"]
 	physics_material_override = mat
-	build_trail()
 	if ball_type != "normal":
 		ring = Sprite2D.new()
 		ring.texture = _ring_texture()
@@ -88,26 +84,6 @@ func _ring_texture() -> ImageTexture:
 				img.set_pixel(x, y, Color.WHITE)
 	return ImageTexture.create_from_image(img)
 
-# Glowing tail made from the ball's own sprite, so it needs no extra art
-func build_trail() -> void:
-	trail = CPUParticles2D.new()
-	trail.show_behind_parent = true
-	trail.local_coords = false
-	trail.texture = $Sprite2D.texture
-	trail.amount = 16
-	trail.lifetime = 0.3
-	trail.gravity = Vector2.ZERO
-	trail.initial_velocity_min = 0.0
-	trail.initial_velocity_max = 0.0
-	trail.scale_amount_min = 0.5   # exactly half size: clean 6x6 pixels
-	trail.scale_amount_max = 0.5
-	var fade := Gradient.new()
-	fade.interpolation_mode = Gradient.GRADIENT_INTERPOLATE_CONSTANT
-	fade.offsets = PackedFloat32Array([0.0, 0.35, 0.65, 0.9])
-	fade.colors = PackedColorArray([Color(1, 1, 1, 0.6), Color(1, 1, 1, 0.38), Color(1, 1, 1, 0.18), Color(1, 1, 1, 0.0)])
-	trail.color_ramp = fade
-	add_child(trail)
-
 func _on_body_entered(body: Node) -> void:
 	if not body.has_method("hit"):
 		return
@@ -121,10 +97,8 @@ func _on_body_entered(body: Node) -> void:
 	match info["kind"]:
 		"black":
 			if ball_type != "heavy":
-				# A skull takes 75% of the multiplier away (and pushes a negative one further down)
+				# A skull takes half the multiplier away (and pushes a negative one further down)
 				bonus -= absf(bonus) * black_cut
-		"neg":
-			bonus += info["add"] * neg_scale * gain_mult
 		"add":
 			bonus += (info["add"] + gold_add) * gain_mult
 	if ball_type == "bouncy":
@@ -152,8 +126,6 @@ func tier_color() -> Color:
 func update_look() -> void:
 	var col := tier_color()
 	$Sprite2D.modulate = col
-	if trail:
-		trail.color = col if ball_type != "heavy" else col.darkened(0.35)
 
 # Keep every ball under its top speed so nothing rockets off the board
 func _integrate_forces(state: PhysicsDirectBodyState2D) -> void:
