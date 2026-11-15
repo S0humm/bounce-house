@@ -107,6 +107,7 @@ func start_run() -> void:
 	pity = 0
 	selected = "normal"
 	last_value.text = "-"
+	last_value.self_modulate = WHITE
 	update_ball_panel()
 	update_perk_panel()
 	start_ante()
@@ -187,11 +188,11 @@ const EASY_FLOOR := 0.8          # warm-up: no ball pays under this
 const INSURE_FLOOR := 0.5        # Insurance perk: no ball pays under this
 const BANANA_BONUS := 0.5        # Gros Michel (banana ball): added to its multiplier when it lands
 const FIRE_MULT := 2.0           # Fire ball: multiplier is doubled on landing if it never touched a skull
-const SKULLS_AT_ANTE_4 := 5      # skulls on the first hard ante...
-const SKULLS_PER_ANTE := 2       # ...plus this many more every ante after
-const MAX_SKULLS := 22           # (the board has 52 chips)
-const HARD_QUOTA_GROWTH := 3.0   # after the warm-up each goal is 3x the last
-const CHIP_SHRINK := 0.8         # each hard ante, big chips (25s and 50s) get this much rarer
+const SKULLS_AT_ANTE_4 := 4      # skulls on the first hard ante...
+const SKULLS_PER_ANTE := 1       # ...plus this many more every ante after
+const MAX_SKULLS := 14           # (the board has 52 chips)
+const HARD_QUOTA_GROWTH := 2.4   # after the warm-up each goal is 2.4x the last
+const CHIP_SHRINK := 0.9         # each hard ante, big chips (25s and 50s) get this much rarer
 
 func skull_count() -> int:
 	if ante <= EASY_ANTES:
@@ -315,6 +316,8 @@ func update_bet_input() -> void:
 # ---------- Balls ----------
 
 func drop_ball() -> void:
+	if bet > money and money >= MIN_BET:
+		bet = money   # bet is more than you have now: go all in instead of doing nothing
 	if busted or ante_over or crate_open or balls_left <= 0 or bet > money:
 		return
 	var all_in := bet >= 100 and bet * 10 >= money * 9
@@ -355,10 +358,15 @@ func _on_ball_gone(ball: Node) -> void:
 	if is_queued_for_deletion() or not is_inside_tree():
 		return
 	if not ball.get_meta("settled", false):
-		# Timed out or lost before reaching the tray: give the bet back
+		# Timed out or lost before reaching the tray: give the bet AND the ball back
 		var refund: int = ball.get_meta("bet", 0)
 		money += refund
-		message_label.text = "BALL TIMED OUT.\n%s REFUNDED." % Fmt.money(refund)
+		if not ante_over:
+			balls_left += 1
+		if ball.ball_type != "normal" and bag_count() < bag_max():
+			inventory[ball.ball_type] += 1
+			update_ball_panel()
+		message_label.text = "BALL GOT STUCK.\n%s AND THE BALL\nWERE REFUNDED." % Fmt.money(refund)
 		update_status()
 	call_deferred("check_ante_end")
 
