@@ -768,7 +768,7 @@ func bag_count() -> int:
 func update_ball_panel() -> void:
 	if ball_labels.is_empty():
 		return
-	bag_title.text = "BAG %d/%d  (UP/DOWN)" % [bag_count(), bag_max()]
+	bag_title.text = "BAG %d/%d" % [bag_count(), bag_max()]
 	for i in BALL_KEYS.size():
 		var type: String = BALL_KEYS[i]
 		var label: Control = ball_labels[type]
