@@ -12,6 +12,7 @@ const Fmt := preload("res://scripts/fmt.gd")
 const MIN_BET := 5
 const BALL_KEYS := ["normal", "heavy", "bouncy", "ghost", "banana"]   # keys 1-5
 const BALL_NAMES := {"normal": "NORMAL", "heavy": "HEAVY", "bouncy": "BOUNCY", "ghost": "GHOST", "banana": "GROS MICHEL"}
+const BALL_RING := {"heavy": Color(0.6, 0.66, 0.8), "bouncy": Color(0.62, 0.95, 0.2), "ghost": Color(0.55, 0.95, 1.0)}
 const BALL_TAGS := {"normal": "", "heavy": "H ", "bouncy": "B ", "ghost": "G ", "banana": "M "}
 const LIVE_ROWS := 5
 
@@ -44,7 +45,14 @@ var last_value: Control
 var message_label: Control
 var live_labels: Array[Control] = []
 var live_empty: Control
-var ball_labels := {}
+var ball_labels := {}       # NEXT BALL rows: ">1" key labels
+var ball_counts := {}       # ...the "X8" counts
+var ball_icon_rects := {}   # ...and the ball pictures
+var icon_cache := {}
+var drop_x := 320.0         # where the next ball drops (aim with the arrow keys)
+var preview: Sprite2D       # see-through copy of the next ball at the drop point
+const AIM_SPEED := 200.0
+const AIM_MARGIN := 18.0
 var perk_box: VBoxContainer
 var bet_input: Button          # click to type an exact bet
 var bet_input_label: Control
@@ -80,6 +88,11 @@ func _ready() -> void:
 	add_child(fx)
 	fx.setup(get_viewport_rect().size)
 	build_walls_and_tray()
+	drop_x = get_viewport_rect().size.x / 2.0
+	preview = Sprite2D.new()
+	preview.modulate = Color(1, 1, 1, 0.5)
+	preview.z_index = 5
+	add_child(preview)
 	build_hud()
 	start_run()
 
@@ -111,7 +124,7 @@ func start_ante() -> void:
 	var warn := "\nWARM-UP: NO BALL PAYS\nUNDER X0.8"
 	if ante > EASY_ANTES:
 		warn = "\nMORE SKULLS, LESS GOLD."
-	message_label.text = "ANTE %d: REACH %s\nUNLIMITED BALLS%s\nSPACE DROP  1-5 BALL" % [ante, Fmt.money(quota), warn]
+	message_label.text = "ANTE %d: REACH %s\nUNLIMITED BALLS%s\n<> AIM  SPACE DROP  1-5" % [ante, Fmt.money(quota), warn]
 	update_status()
 
 func check_ante_end() -> void:
@@ -307,8 +320,7 @@ func drop_ball() -> void:
 		if inventory[type] <= 0:
 			selected = "normal"
 		update_ball_panel()
-	var center_x := get_viewport_rect().size.x / 2.0
-	var ball := spawn_ball(type, Vector2(center_x + randf_range(-drop_jitter, drop_jitter), 20), bet)
+	var ball := spawn_ball(type, Vector2(drop_x + randf_range(-drop_jitter, drop_jitter), 20), bet)
 	fx.ball_dropped(ball.position, all_in)
 	clamp_bet()
 	update_status()
@@ -422,6 +434,15 @@ func select_ball(type: String) -> void:
 # ---------- Juice ----------
 
 func _process(delta: float) -> void:
+	# Aim: hold left/right to slide the drop point along the top
+	if not typing and not crate_open:
+		var dir := int(Input.is_key_pressed(KEY_RIGHT)) - int(Input.is_key_pressed(KEY_LEFT))
+		if dir != 0:
+			var w := get_viewport_rect().size.x
+			drop_x = clampf(drop_x + dir * AIM_SPEED * delta, AIM_MARGIN, w - AIM_MARGIN)
+	preview.position = Vector2(roundf(drop_x), 20)
+	preview.texture = ball_icon(selected)
+	preview.visible = not busted and not ante_over
 	# Money counts up toward its real value, ticking like a slot machine payout
 	var target := float(money)
 	if absf(shown_money - target) > 0.5:
@@ -558,8 +579,20 @@ func build_hud() -> void:
 
 	var ball_box := add_box(make_panel(left, 124), "NEXT BALL  (1-5)")
 	for type in BALL_KEYS:
-		var b := make_button(ball_box, "", 1, 112, 14, select_ball.bind(type), true)
-		ball_labels[type] = b.get_meta("label")
+		var b := make_button(ball_box, "", 1, 112, 18, select_ball.bind(type), true)
+		var key_label: Control = b.get_meta("label")
+		key_label.position = Vector2(3, 5)
+		ball_labels[type] = key_label
+		var icon := TextureRect.new()
+		icon.texture = ball_icon(type)
+		icon.position = Vector2(22, 1)
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.add_child(icon)
+		ball_icon_rects[type] = icon
+		var count := PixelLabel.new()
+		count.position = Vector2(44, 5)
+		b.add_child(count)
+		ball_counts[type] = count
 
 	var right := VBoxContainer.new()
 	right.position = Vector2(screen.x - 12 - 120, 12)
@@ -678,15 +711,47 @@ func update_ball_panel() -> void:
 	for i in BALL_KEYS.size():
 		var type: String = BALL_KEYS[i]
 		var label: Control = ball_labels[type]
-		var count := "" if type == "normal" else " X%d" % inventory[type]
-		var arrow := ">" if type == selected else " "
-		label.text = "%s%d %s%s" % [arrow, i + 1, BALL_NAMES[type], count]
+		label.text = "%s%d" % [">" if type == selected else " ", i + 1]
+		ball_counts[type].text = "" if type == "normal" else "X%d" % inventory[type]
+		var col := WHITE
 		if type == selected:
-			label.self_modulate = Color(1.0, 0.9, 0.45)
+			col = Color(1.0, 0.9, 0.45)
 		elif type != "normal" and inventory[type] <= 0:
-			label.self_modulate = DIM
-		else:
-			label.self_modulate = WHITE
+			col = DIM
+		label.self_modulate = col
+		ball_counts[type].self_modulate = col
+		ball_icon_rects[type].modulate = Color(1, 1, 1, 0.35) if col == DIM else Color.WHITE
+
+# 16x16 picture of each ball type, the same art the real balls use
+func ball_icon(type: String) -> Texture2D:
+	if icon_cache.has(type):
+		return icon_cache[type]
+	var img := Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	if type == "banana":
+		var art: Image = (load("res://art/icons/banana.png") as Texture2D).get_image()
+		art.convert(Image.FORMAT_RGBA8)
+		art.resize(16, 16, Image.INTERPOLATE_BILINEAR)
+		img = art
+	else:
+		var core: Image = (load("res://art/ball.png") as Texture2D).get_image()
+		core.convert(Image.FORMAT_RGBA8)
+		if type == "ghost":
+			for y in core.get_height():
+				for x in core.get_width():
+					var c := core.get_pixel(x, y)
+					c.a *= 0.55
+					core.set_pixel(x, y, c)
+		img.blend_rect(core, Rect2i(Vector2i.ZERO, core.get_size()), Vector2i(2, 2))
+		var ring_col: Color = BALL_RING.get(type, Color(0, 0, 0, 0))
+		if ring_col.a > 0.0:
+			for y in 16:
+				for x in 16:
+					var r := Vector2(x + 0.5 - 8.0, y + 0.5 - 8.0).length()
+					if r > 6.6 and r <= 7.8:
+						img.set_pixel(x, y, ring_col)
+	icon_cache[type] = ImageTexture.create_from_image(img)
+	return icon_cache[type]
 
 func update_perk_panel() -> void:
 	if perk_box == null:
