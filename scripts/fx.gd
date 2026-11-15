@@ -65,7 +65,6 @@ func setup(size: Vector2) -> void:
 	dot3_tex = _make_dot(3)
 	dot2_tex = _make_dot(2)
 	coin_tex = _make_coin()
-	_build_bulbs()
 	_build_background()
 
 	cam = Camera2D.new()
@@ -136,21 +135,32 @@ func _build_bulbs() -> void:
 		y -= step
 
 func _build_background() -> void:
-	# Spotlit felt drawn as ordered-dither pixel art: a handful of greens, no smooth gradient
+	# Spotlit felt drawn as ordered-dither pixel art, with a faint diamond lattice,
+	# deep vignette and small gold corner flourishes. All static, no frame.
 	var w := 320
 	var h := 180
-	var inner := Color(0.17, 0.40, 0.24)
-	var outer := Color(0.04, 0.12, 0.07)
-	var levels := 6
+	var inner := Color(0.18, 0.42, 0.25)
+	var outer := Color(0.02, 0.07, 0.04)
+	var levels := 7
 	var img := Image.create(w, h, false, Image.FORMAT_RGB8)
 	for y in h:
 		for x in w:
 			var dx := (x + 0.5) / w - 0.5
 			var dy := (y + 0.5) / h - 0.5
-			var t := clampf(sqrt(dx * dx + dy * dy) / 0.62, 0.0, 1.0)
+			var t := clampf(sqrt(dx * dx + dy * dy * 1.6) / 0.6, 0.0, 1.0)
+			t = t * t * (3.0 - 2.0 * t)   # softer center, darker edges
 			var threshold: float = (BAYER[(y % 4) * 4 + (x % 4)] + 0.5) / 16.0
 			var q := floorf(t * (levels - 1) + threshold) / (levels - 1)
-			img.set_pixel(x, y, inner.lerp(outer, clampf(q, 0.0, 1.0)))
+			var c := inner.lerp(outer, clampf(q, 0.0, 1.0))
+			# Diamond lattice woven into the felt
+			var a := posmod(x + y, 20)
+			var b := posmod(x - y, 20)
+			if a == 0 or b == 0:
+				c = c.darkened(0.18)
+			elif (a == 10 and b == 10):
+				c = c.lerp(GOLD, 0.35 * (1.0 - t))   # tiny gold stud at each crossing
+			img.set_pixel(x, y, c)
+	_draw_flourishes(img)
 	var bg := Sprite2D.new()
 	bg.texture = ImageTexture.create_from_image(img)
 	bg.centered = false
@@ -159,24 +169,42 @@ func _build_background() -> void:
 	bg.z_index = -100
 	add_child(bg)
 
+# Gold filigree in each corner: a quarter arc, a curl and a diamond, mirrored 4 ways
+func _draw_flourishes(img: Image) -> void:
+	var w := img.get_width()
+	var h := img.get_height()
+	var light := Color(0.95, 0.78, 0.35)
+	var dark := Color(0.55, 0.38, 0.12)
+	var pts := []   # [x, y, is_light] in top-left corner space
+	for i in 40:
+		var ang := PI * 0.5 * i / 39.0
+		pts.append([int(round(4 + 16 * cos(ang))), int(round(4 + 16 * sin(ang))), true])
+		pts.append([int(round(4 + 10 * cos(ang))), int(round(4 + 10 * sin(ang))), false])
+	for i in 30:   # curls running along each edge
+		var ang := TAU * i / 30.0
+		pts.append([int(round(28 + 3 * cos(ang))), int(round(5 + 3 * sin(ang))), true])
+		pts.append([int(round(5 + 3 * cos(ang))), int(round(28 + 3 * sin(ang))), true])
+	for x in range(32, 52):   # tapering rule from the curl
+		pts.append([x, 5, x < 44])
+	for y in range(32, 46):
+		pts.append([5, y, y < 40])
+	for d in [[13, 13], [14, 13], [13, 14], [12, 13], [13, 12]]:   # diamond stud
+		pts.append([d[0], d[1], d == [13, 13]])
+	for p in pts:
+		for m in [[0, 0], [1, 0], [0, 1], [1, 1]]:
+			var px: int = p[0] if m[0] == 0 else w - 1 - p[0]
+			var py: int = p[1] if m[1] == 0 else h - 1 - p[1]
+			if px >= 0 and py >= 0 and px < w and py < h:
+				img.set_pixel(px, py, light if p[2] else dark)
+
 func _draw() -> void:
-	# Gold bleed outside the frame so camera shake never exposes the background
+	# Dark bleed outside the screen so camera shake never shows a gap
 	var b := 24.0
-	draw_rect(Rect2(-b, -b, screen.x + 2.0 * b, b), GOLD)
-	draw_rect(Rect2(-b, screen.y, screen.x + 2.0 * b, b), GOLD)
-	draw_rect(Rect2(-b, 0, b, screen.y), GOLD)
-	draw_rect(Rect2(screen.x, 0, b, screen.y), GOLD)
-	for i in bulbs.size():
-		var col := BULB_OFF
-		if party > 0.0:
-			col = Color.from_hsv(fmod(i * 0.03 + chase * 1.6, 1.0), 0.55, 1.0)
-		else:
-			var phase := posmod(i - int(chase * 14.0), 5)
-			if phase == 0:
-				col = BULB_ON
-			elif phase == 1:
-				col = BULB_MID
-		draw_rect(Rect2(bulbs[i] - Vector2(1.5, 1.5), Vector2(3, 3)), col)
+	var edge := Color(0.02, 0.07, 0.04)
+	draw_rect(Rect2(-b, -b, screen.x + 2.0 * b, b), edge)
+	draw_rect(Rect2(-b, screen.y, screen.x + 2.0 * b, b), edge)
+	draw_rect(Rect2(-b, 0, b, screen.y), edge)
+	draw_rect(Rect2(screen.x, 0, b, screen.y), edge)
 
 # ---------- High-level events (called by the board) ----------
 

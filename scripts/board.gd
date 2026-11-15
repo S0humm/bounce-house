@@ -319,7 +319,7 @@ func set_chip(peg: Node2D, color: String) -> void:
 	peg.get_node("Sprite2D").texture = CHIP_TEXTURES[color]
 	peg.set_meta("chip", color)
 
-# Gold border around the whole screen, with the collection tray along the bottom
+# Invisible walls around the screen (no visible border), with the collection tray along the bottom
 func build_border_and_tray() -> void:
 	var screen := get_viewport_rect().size
 	var t := 8.0   # border thickness
@@ -352,6 +352,7 @@ func add_block(center: Vector2, size: Vector2, color: Color) -> void:
 	vis.size = size
 	vis.position = -size / 2.0
 	vis.color = color
+	vis.visible = false   # walls still collide, but nothing is drawn
 	body.add_child(vis)
 	add_child(body)
 
