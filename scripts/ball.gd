@@ -1,13 +1,24 @@
 extends RigidBody2D
 
-const PixelFont := preload("res://scripts/pixel_font.gd")
+const Chips := preload("res://scripts/chips.gd")
 
 # The board listens to these to play sound and effects
-signal chip_hit(ball: RigidBody2D, chip: String, gain: float)
+signal chip_hit(ball: RigidBody2D, peg: Node, chip: String, gain: float)
 signal tier_up(ball: RigidBody2D, tier: int)
 
-# How much each chip color adds to the ball's multiplier
-const CHIP_ADD := {"white": 0.01, "red": 0.25, "blue": 0.05, "green": 0.1}
+# Ball types:
+#   normal: the standard ball
+#   heavy:  falls fast, every chip counts double (the bad ones too), smashes skulls into good chips
+#   bouncy: springs around and gets +0.03 extra on every hit
+#   ghost:  floats straight through skulls and minus chips
+const TYPES := {
+	"normal": {"gravity": 0.7,  "bounce": 0.8,  "friction": 0.1, "mass": 1.0, "gain": 1.0, "max_speed": 420.0, "ring": Color(0, 0, 0, 0)},
+	"heavy":  {"gravity": 1.1,  "bounce": 0.3,  "friction": 0.3, "mass": 4.0, "gain": 2.0, "max_speed": 480.0, "ring": Color(0.6, 0.66, 0.8)},
+	"bouncy": {"gravity": 0.55, "bounce": 0.9,  "friction": 0.0, "mass": 0.8, "gain": 1.0, "max_speed": 230.0, "ring": Color(0.62, 0.95, 0.2)},
+	"ghost":  {"gravity": 0.7,  "bounce": 0.8,  "friction": 0.1, "mass": 1.0, "gain": 1.0, "max_speed": 420.0, "ring": Color(0.55, 0.95, 1.0)},
+}
+const BOUNCY_BONUS := 0.03
+const MIN_MULT := -3.0   # floor, so one cursed ball can't wipe out your whole bankroll
 
 # Multiplier needed to reach each glow tier (the ball and its trail change color)
 const TIER_STEPS := [1.0, 2.0, 4.0, 7.0]
@@ -18,32 +29,64 @@ const TIER_COLORS := [
 	Color(1.0, 0.35, 0.7),
 	Color(0.55, 1.0, 1.0),
 ]
+const NEGATIVE_COLOR := Color(1.0, 0.3, 0.3)
 
-@export var max_lifetime := 20.0   # seconds before a ball is removed no matter what (typical fall is ~9s, slowest ~12s)
+@export var max_lifetime := 20.0   # seconds before a ball is removed no matter what
 @export var stuck_speed := 10.0    # slower than this counts as "not moving"
 @export var stuck_delay := 1.0     # seconds of not moving before we nudge it
 
+var ball_type := "normal"
+# Upgrade effects, filled in by the board before the ball drops
+var black_cut := 0.75     # share of the multiplier a skull takes away
+var neg_scale := 1.0      # how hard minus chips hit
+var gold_add := 0.0       # extra on every good chip
 var age := 0.0
 var stuck_time := 0.0
 var bonus := 0.0      # running multiplier, starts at x0.00
 var hits := 0         # chips touched so far (drives the rising pitch)
 var tier := 0
-var label: Sprite2D      # the multiplier number, drawn with the pixel font
-var label_px := 1
 var trail: CPUParticles2D
-var label_tween: Tween
+var ring: Sprite2D
+
+# Call before adding the ball to the scene
+func setup(type_name: String, mods: Dictionary) -> void:
+	ball_type = type_name if TYPES.has(type_name) else "normal"
+	black_cut = mods.get("black_cut", 0.75)
+	neg_scale = mods.get("neg_scale", 1.0)
+	gold_add = mods.get("gold_add", 0.0)
 
 func _ready() -> void:
 	contact_monitor = true
 	max_contacts_reported = 4
-	lock_rotation = true   # keeps the number above the ball from spinning
+	lock_rotation = true
 	body_entered.connect(_on_body_entered)
-
-	label = Sprite2D.new()
-	label.centered = false
-	add_child(label)
+	var t: Dictionary = TYPES[ball_type]
+	gravity_scale = t["gravity"]
+	mass = t["mass"]
+	var mat := PhysicsMaterial.new()   # own material, so one ball's type never changes another's
+	mat.bounce = t["bounce"]
+	mat.friction = t["friction"]
+	physics_material_override = mat
 	build_trail()
-	update_label()
+	if ball_type != "normal":
+		ring = Sprite2D.new()
+		ring.texture = _ring_texture()
+		ring.self_modulate = t["ring"]
+		add_child(ring)
+	if ball_type == "ghost":
+		$Sprite2D.self_modulate = Color(1, 1, 1, 0.55)
+	update_look()
+
+# 1px ring drawn around special balls so you can tell them apart
+func _ring_texture() -> ImageTexture:
+	var img := Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	for y in 16:
+		for x in 16:
+			var r := Vector2(x + 0.5 - 8.0, y + 0.5 - 8.0).length()
+			if r > 6.6 and r <= 7.8:
+				img.set_pixel(x, y, Color.WHITE)
+	return ImageTexture.create_from_image(img)
 
 # Glowing tail made from the ball's own sprite, so it needs no extra art
 func build_trail() -> void:
@@ -66,74 +109,69 @@ func build_trail() -> void:
 	add_child(trail)
 
 func _on_body_entered(body: Node) -> void:
-	if body.has_method("hit"):
-		body.hit()
-		var chip: String = body.get_meta("chip", "white")
-		var gain := 0.0
-		if chip == "black":
-			# Black chip: halve the ball's multiplier
-			gain = -bonus * 0.5
-			bonus *= 0.5
-			flash_label(Color(1.0, 0.3, 0.3))
-		else:
-			gain = CHIP_ADD.get(chip, 0.0)
-			bonus += gain
-		hits += 1
-		var new_tier := 0
-		for step in TIER_STEPS:
-			if bonus >= step:
-				new_tier += 1
-		var climbed := new_tier > tier
-		tier = new_tier
-		update_label()
-		pop_label()
-		chip_hit.emit(self, chip, gain)
-		if climbed:
-			tier_up.emit(self, tier)
-
-func flash_label(color: Color) -> void:
-	label.modulate = color
-	var tw := create_tween()
-	tw.tween_property(label, "modulate", Color.WHITE, 0.4)
-
-# Number jumps to 2x for a moment on every hit (whole-pixel scales only)
-func pop_label() -> void:
-	if label_tween:
-		label_tween.kill()
-	place_label(2)
-	label_tween = create_tween()
-	label_tween.tween_interval(0.08)
-	label_tween.tween_callback(place_label.bind(1))
-
-# Center the number above the ball at an integer pixel scale
-func place_label(px: int) -> void:
-	label_px = px
-	label.scale = Vector2(px, px)
-	var width: int = label.texture.get_width() * px
-	label.position = Vector2(-floorf(width / 2.0), -20 - 4 * px)
+	if not body.has_method("hit"):
+		return
+	var chip: String = body.get_meta("chip", "c1")
+	var info := Chips.info(chip)
+	if ball_type == "ghost" and info["kind"] != "add":
+		return   # (ghosts also skip the collision itself, see the board)
+	body.hit()
+	var gain_mult: float = TYPES[ball_type]["gain"]
+	var before := bonus
+	match info["kind"]:
+		"black":
+			if ball_type != "heavy":
+				# A skull takes 75% of the multiplier away (and pushes a negative one further down)
+				bonus -= absf(bonus) * black_cut
+		"neg":
+			bonus += info["add"] * neg_scale * gain_mult
+		"add":
+			bonus += (info["add"] + gold_add) * gain_mult
+	if ball_type == "bouncy":
+		bonus += BOUNCY_BONUS
+	bonus = maxf(bonus, MIN_MULT)
+	var gain := bonus - before
+	hits += 1
+	var new_tier := 0
+	for step in TIER_STEPS:
+		if bonus >= step:
+			new_tier += 1
+	var climbed := new_tier > tier
+	tier = new_tier
+	update_look()
+	chip_hit.emit(self, body, chip, gain)
+	if climbed:
+		tier_up.emit(self, tier)
 
 func get_multiplier() -> float:
 	return bonus
 
-func update_label() -> void:
-	label.texture = PixelFont.texture("x%.3f" % get_multiplier())
-	var col: Color = TIER_COLORS[tier]
-	label.self_modulate = col
+func tier_color() -> Color:
+	return NEGATIVE_COLOR if bonus < 0.0 else TIER_COLORS[tier]
+
+func update_look() -> void:
+	var col := tier_color()
 	$Sprite2D.modulate = col
-	trail.color = col
-	place_label(label_px)
+	if trail:
+		trail.color = col if ball_type != "heavy" else col.darkened(0.35)
+
+# Keep every ball under its top speed so nothing rockets off the board
+func _integrate_forces(state: PhysicsDirectBodyState2D) -> void:
+	var cap: float = TYPES[ball_type]["max_speed"]
+	if state.linear_velocity.length() > cap:
+		state.linear_velocity = state.linear_velocity.limit_length(cap)
 
 func _physics_process(delta: float) -> void:
 	age += delta
 	# Hard limit: no ball lives forever
-	if age > max_lifetime or position.y > 400.0:
+	if age > max_lifetime or position.y > 400.0 or position.y < -100.0:
 		queue_free()
 		return
 	# If the ball is resting somewhere, give it a small push
 	if linear_velocity.length() < stuck_speed:
 		stuck_time += delta
 		if stuck_time > stuck_delay:
-			apply_central_impulse(Vector2(randf_range(-40.0, 40.0), -20.0))
+			apply_central_impulse(Vector2(randf_range(-40.0, 40.0), -20.0) * mass)
 			stuck_time = 0.0
 	else:
 		stuck_time = 0.0

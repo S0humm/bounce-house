@@ -5,19 +5,14 @@ extends Node2D
 
 const SfxScript := preload("res://scripts/sfx.gd")
 const PixelFont := preload("res://scripts/pixel_font.gd")
+const Chips := preload("res://scripts/chips.gd")
+const Fmt := preload("res://scripts/fmt.gd")
 
 const GOLD := Color(0.85, 0.65, 0.2)
 const BULB_ON := Color(1.0, 0.96, 0.65)
 const BULB_MID := Color(0.85, 0.58, 0.16)
 const BULB_OFF := Color(0.5, 0.34, 0.1)
 
-const CHIP_COLORS := {
-	"white": Color(0.95, 0.95, 0.9),
-	"red": Color(1.0, 0.35, 0.3),
-	"blue": Color(0.4, 0.7, 1.0),
-	"green": Color(0.4, 1.0, 0.5),
-	"black": Color(0.6, 0.15, 0.2),
-}
 const TIER_COLORS := [
 	Color(1.0, 1.0, 1.0),
 	Color(1.0, 0.92, 0.45),
@@ -252,31 +247,51 @@ func _draw() -> void:
 
 # ---------- High-level events (called by the board) ----------
 
-func chip_hit(chip: String, pos: Vector2, gain: float, combo: int) -> void:
-	var col: Color = CHIP_COLORS.get(chip, Color.WHITE)
-	match chip:
+func chip_hit(chip: String, pos: Vector2, gain: float, combo: int, smashed := false) -> void:
+	var col := Chips.color(chip)
+	var info := Chips.info(chip)
+	match info["kind"]:
 		"black":
+			if smashed:
+				# A heavy ball crushing a skull into a good chip
+				sfx.play("pop", 0.6)
+				sfx.play("coin", 0.8, -6.0)
+				burst(pos, Color(0.75, 0.8, 0.9), 14, 110.0, 0.45, 1.3, 160.0)
+				popup(pos + Vector2(0, -16), "SMASH!", Color(0.8, 0.86, 1.0), 2, 18.0, 0.7)
+				add_trauma(0.18)
+				return
 			sfx.play("womp")
-			burst(pos, col, 14, 110.0, 0.5, 1.4, 200.0)
-			popup(pos + Vector2(0, -16), "-50%", Color(1.0, 0.35, 0.3), 2, 18.0, 0.7)
+			burst(pos, Color(0.6, 0.15, 0.2), 14, 110.0, 0.5, 1.4, 200.0)
+			popup(pos + Vector2(0, -16), "-75%", Color(1.0, 0.35, 0.3), 2, 18.0, 0.7)
 			add_trauma(0.3)
 			hit_stop(0.05)
 			flash(Color(0.8, 0.05, 0.05), 0.22, 0.25)
-		"red":
-			sfx.play("ding_red", sfx.ladder(combo))
-			burst(pos, col, 8, 75.0, 0.4, 1.2)
-			popup(pos + Vector2(0, -14), "+%.2f" % gain, col, 1)
-		"blue":
-			sfx.play("ding_blue", sfx.ladder(combo))
-			burst(pos, col, 6, 65.0, 0.35, 1.0)
-			popup(pos + Vector2(0, -14), "+%.2f" % gain, col, 1)
-		"green":
-			sfx.play("chime", sfx.ladder(combo))
-			burst(pos, col, 7, 70.0, 0.4, 1.1)
-			popup(pos + Vector2(0, -14), "+%.2f" % gain, col, 1)
+		"neg":
+			sfx.play("lose", 1.3 - 0.05 * clampi(combo, 0, 6), -3.0)
+			burst(pos, Color(1.0, 0.3, 0.3), 6, 60.0, 0.35, 1.0, 120.0)
+			popup(pos + Vector2(0, -14), "%.2f" % gain, Color(1.0, 0.4, 0.4), 1)
+			add_trauma(0.06)
 		_:
-			sfx.play("blip", sfx.ladder(combo), -6.0)
-			burst(pos, col, 3, 40.0, 0.28, 0.9, 60.0)
+			# Bigger chips: bigger sound, more sparks, bigger number
+			var add: float = info["add"]
+			var text := "+%.2f" % gain
+			if add >= 0.5:
+				sfx.play("chime", sfx.ladder(combo))
+				sfx.play("tier", 1.4, -6.0)
+				burst(pos, col, 14, 100.0, 0.5, 1.4)
+				popup(pos + Vector2(0, -16), text, col, 2)
+				add_trauma(0.12)
+			elif add >= 0.25:
+				sfx.play("ding_red", sfx.ladder(combo))
+				burst(pos, col, 9, 80.0, 0.42, 1.2)
+				popup(pos + Vector2(0, -14), text, col, 1)
+			elif add >= 0.05:
+				sfx.play("ding_blue", sfx.ladder(combo))
+				burst(pos, col, 6, 65.0, 0.35, 1.0)
+				popup(pos + Vector2(0, -14), text, col, 1)
+			else:
+				sfx.play("blip", sfx.ladder(combo), -6.0)
+				burst(pos, col, 3, 40.0, 0.28, 0.9, 60.0)
 
 func tier_up(pos: Vector2, tier: int) -> void:
 	var col: Color = TIER_COLORS[clampi(tier, 0, TIER_COLORS.size() - 1)]
@@ -317,15 +332,26 @@ func landed(pos: Vector2, mult: float, payout: int, bet: int, quota: int) -> voi
 	var p := Vector2(clampf(pos.x, 50.0, screen.x - 50.0), 318.0)
 	var net := payout - bet
 
+	if mult < 0.0:
+		# Negative landing: you lose the bet AND then some
+		win_streak = 0
+		sfx.play("womp")
+		sfx.play("lose", 0.7)
+		popup(p, "-" + Fmt.money(-net), Color(1.0, 0.3, 0.3), 3, 24.0, 1.0)
+		popup(p + Vector2(0, -26), "NEGATIVE!", Color(1.0, 0.45, 0.4), 1)
+		flash(Color(0.8, 0.0, 0.0), 0.35, 0.4)
+		add_trauma(0.45)
+		hit_stop(0.08)
+		return
 	if tier == 0:
 		win_streak = 0
 		sfx.play("lose")
-		popup(p, "-$%d" % -net, Color(1.0, 0.5, 0.45), 1)
+		popup(p, "-" + Fmt.money(-net), Color(1.0, 0.5, 0.45), 1)
 		return
 
 	win_streak += 1
 	sfx.play("coin", sfx.ladder(win_streak - 1))
-	popup(p, "+$%d" % net, Color(0.55, 1.0, 0.55), 3 if tier >= 4 else 2, 28.0, 0.9)
+	popup(p, "+" + Fmt.money(net), Color(0.55, 1.0, 0.55), 3 if tier >= 4 else 2, 28.0, 0.9)
 	if win_streak >= 2:
 		popup(p + Vector2(0, -24), "STREAK x%d" % win_streak, Color(1.0, 0.6, 0.2), 1)
 	coins(p, WIN_COINS[tier], tier >= 3)
@@ -375,7 +401,7 @@ func busted(short_by: int, near_miss: bool) -> void:
 	sfx.play("bust")
 	show_banner("BUSTED", Color(1.0, 0.3, 0.25), 1.6, 5)
 	if near_miss:
-		popup(Vector2(screen.x / 2.0, 214.0), "SO CLOSE!  $%d SHORT" % short_by, Color(1.0, 0.85, 0.5), 2, 10.0, 1.8)
+		popup(Vector2(screen.x / 2.0, 214.0), "SO CLOSE!  %s SHORT" % Fmt.money(short_by), Color(1.0, 0.85, 0.5), 2, 10.0, 1.8)
 	flash(Color(0.8, 0.0, 0.0), 0.4, 0.6)
 	add_trauma(0.5)
 	hit_stop(0.5, 0.2)
