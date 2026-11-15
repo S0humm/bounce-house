@@ -66,6 +66,7 @@ func setup(size: Vector2) -> void:
 	dot2_tex = _make_dot(2)
 	coin_tex = _make_coin()
 	_build_background()
+	_build_frame()
 
 	cam = Camera2D.new()
 	cam.position = screen / 2.0
@@ -135,32 +136,21 @@ func _build_bulbs() -> void:
 		y -= step
 
 func _build_background() -> void:
-	# Spotlit felt drawn as ordered-dither pixel art, with a faint diamond lattice,
-	# deep vignette and small gold corner flourishes. All static, no frame.
+	# Spotlit felt drawn as ordered-dither pixel art: a handful of greens, no smooth gradient
 	var w := 320
 	var h := 180
-	var inner := Color(0.18, 0.42, 0.25)
-	var outer := Color(0.02, 0.07, 0.04)
-	var levels := 7
+	var inner := Color(0.17, 0.40, 0.24)
+	var outer := Color(0.04, 0.12, 0.07)
+	var levels := 6
 	var img := Image.create(w, h, false, Image.FORMAT_RGB8)
 	for y in h:
 		for x in w:
 			var dx := (x + 0.5) / w - 0.5
 			var dy := (y + 0.5) / h - 0.5
-			var t := clampf(sqrt(dx * dx + dy * dy * 1.6) / 0.6, 0.0, 1.0)
-			t = t * t * (3.0 - 2.0 * t)   # softer center, darker edges
+			var t := clampf(sqrt(dx * dx + dy * dy) / 0.62, 0.0, 1.0)
 			var threshold: float = (BAYER[(y % 4) * 4 + (x % 4)] + 0.5) / 16.0
 			var q := floorf(t * (levels - 1) + threshold) / (levels - 1)
-			var c := inner.lerp(outer, clampf(q, 0.0, 1.0))
-			# Diamond lattice woven into the felt
-			var a := posmod(x + y, 20)
-			var b := posmod(x - y, 20)
-			if a == 0 or b == 0:
-				c = c.darkened(0.18)
-			elif (a == 10 and b == 10):
-				c = c.lerp(GOLD, 0.35 * (1.0 - t))   # tiny gold stud at each crossing
-			img.set_pixel(x, y, c)
-	_draw_flourishes(img)
+			img.set_pixel(x, y, inner.lerp(outer, clampf(q, 0.0, 1.0)))
 	var bg := Sprite2D.new()
 	bg.texture = ImageTexture.create_from_image(img)
 	bg.centered = false
@@ -169,38 +159,92 @@ func _build_background() -> void:
 	bg.z_index = -100
 	add_child(bg)
 
-# Gold filigree in each corner: a quarter arc, a curl and a diamond, mirrored 4 ways
-func _draw_flourishes(img: Image) -> void:
-	var w := img.get_width()
-	var h := img.get_height()
-	var light := Color(0.95, 0.78, 0.35)
-	var dark := Color(0.55, 0.38, 0.12)
-	var pts := []   # [x, y, is_light] in top-left corner space
-	for i in 40:
-		var ang := PI * 0.5 * i / 39.0
-		pts.append([int(round(4 + 16 * cos(ang))), int(round(4 + 16 * sin(ang))), true])
-		pts.append([int(round(4 + 10 * cos(ang))), int(round(4 + 10 * sin(ang))), false])
-	for i in 30:   # curls running along each edge
-		var ang := TAU * i / 30.0
-		pts.append([int(round(28 + 3 * cos(ang))), int(round(5 + 3 * sin(ang))), true])
-		pts.append([int(round(5 + 3 * cos(ang))), int(round(28 + 3 * sin(ang))), true])
-	for x in range(32, 52):   # tapering rule from the curl
-		pts.append([x, 5, x < 44])
-	for y in range(32, 46):
-		pts.append([5, y, y < 40])
-	for d in [[13, 13], [14, 13], [13, 14], [12, 13], [13, 12]]:   # diamond stud
-		pts.append([d[0], d[1], d == [13, 13]])
-	for p in pts:
-		for m in [[0, 0], [1, 0], [0, 1], [1, 1]]:
-			var px: int = p[0] if m[0] == 0 else w - 1 - p[0]
-			var py: int = p[1] if m[1] == 0 else h - 1 - p[1]
-			if px >= 0 and py >= 0 and px < w and py < h:
-				img.set_pixel(px, py, light if p[2] else dark)
+
+# Static gold picture frame, drawn once at full resolution (8px, matching the invisible walls)
+const FRAME_OUT := Color(0.24, 0.13, 0.03)
+func _build_frame() -> void:
+	var w := int(screen.x)
+	var h := int(screen.y)
+	var t := 8
+	# Profile from the outside edge inward: outline, bright lip, gold, beaded band, gold, dark groove, inner lip, shadow
+	var prof := [FRAME_OUT, Color(1.0, 0.9, 0.55), Color(0.93, 0.72, 0.26), Color(0.84, 0.6, 0.19),
+		Color(0.74, 0.5, 0.14), Color(0.5, 0.31, 0.08), Color(0.98, 0.82, 0.42), Color(0.12, 0.06, 0.02)]
+	var bead := Color(1.0, 0.95, 0.7)
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	for y in h:
+		for x in w:
+			var d := mini(mini(x, y), mini(w - 1 - x, h - 1 - y))
+			if d < t:
+				var c: Color = prof[d]
+				# Light from the top-left: top/left sides brighter, bottom/right darker
+				var lit := (y == d or x == d)
+				if d > 0 and d < 7:
+					c = c.lightened(0.08) if lit else c.darkened(0.12)
+				# Beads along the middle band
+				if d == 3:
+					var along := x if (y == d or y == h - 1 - d) else y
+					if posmod(along, 6) == 0:
+						c = bead
+				img.set_pixel(x, y, c)
+			elif d < t + 3:
+				img.set_pixel(x, y, Color(0, 0, 0, [0.45, 0.25, 0.1][d - t]))   # soft shadow onto the felt
+	# Corner medallions with a ruby, and small emeralds at the middle of each side
+	for corner in [Vector2i(0, 0), Vector2i(w - 15, 0), Vector2i(0, h - 15), Vector2i(w - 15, h - 15)]:
+		_medallion(img, corner, Color(0.85, 0.12, 0.18), Color(1.0, 0.55, 0.55))
+	for mid in [Vector2i(w / 2 - 5, -2), Vector2i(w / 2 - 5, h - 9), Vector2i(-2, h / 2 - 5), Vector2i(w - 9, h / 2 - 5)]:
+		_gem(img, mid + Vector2i(1, 1), 4, Color(0.1, 0.65, 0.35), Color(0.6, 1.0, 0.75))
+	var frame := Sprite2D.new()
+	frame.texture = ImageTexture.create_from_image(img)
+	frame.centered = false
+	frame.z_as_relative = false
+	frame.z_index = -90
+	add_child(frame)
+
+func _medallion(img: Image, at: Vector2i, gem: Color, gem_hi: Color) -> void:
+	# 15x15 raised gold block with a bevel, holding a diamond-cut gem
+	for y in 15:
+		for x in 15:
+			var c := Color(0.9, 0.68, 0.24)
+			if x == 0 or y == 0 or x == 14 or y == 14:
+				c = FRAME_OUT
+			elif x == 1 or y == 1:
+				c = Color(1.0, 0.92, 0.6)
+			elif x == 13 or y == 13:
+				c = Color(0.55, 0.35, 0.09)
+			elif x == 2 or y == 2 or x == 12 or y == 12:
+				c = Color(0.78, 0.55, 0.16)
+			img.set_pixel(at.x + x, at.y + y, c)
+	_gem(img, at + Vector2i(3, 3), 4, gem, gem_hi)
+
+func _gem(img: Image, at: Vector2i, r: int, col: Color, hi: Color) -> void:
+	# Diamond shape (|dx|+|dy| <= r) with a dark rim, facet shading and a glint
+	for y in range(-r, r + 1):
+		for x in range(-r, r + 1):
+			var m := absi(x) + absi(y)
+			if m > r:
+				continue
+			var c := col
+			if m == r:
+				c = col.darkened(0.55)
+			elif x + y < 0:
+				c = col.lightened(0.2)
+			elif x + y > 0:
+				c = col.darkened(0.25)
+			var px := at.x + r + x
+			var py := at.y + r + y
+			if px >= 0 and py >= 0 and px < img.get_width() and py < img.get_height():
+				img.set_pixel(px, py, c)
+	var gx := at.x + r - 1
+	var gy := at.y + r - 2
+	if gx >= 0 and gy >= 0:
+		img.set_pixel(gx, gy, hi)
+		img.set_pixel(gx, gy + 1, Color.WHITE)
 
 func _draw() -> void:
-	# Dark bleed outside the screen so camera shake never shows a gap
+	# Frame-colored bleed outside the screen so camera shake never shows a gap
 	var b := 24.0
-	var edge := Color(0.02, 0.07, 0.04)
+	var edge := FRAME_OUT
 	draw_rect(Rect2(-b, -b, screen.x + 2.0 * b, b), edge)
 	draw_rect(Rect2(-b, screen.y, screen.x + 2.0 * b, b), edge)
 	draw_rect(Rect2(-b, 0, b, screen.y), edge)
