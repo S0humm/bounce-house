@@ -506,7 +506,7 @@ func add_midas(n: int) -> void:
 	var good := pegs.filter(func(p): return p.get_meta("chip") in ["c1", "c5", "c10"])
 	good.shuffle()
 	for i in mini(n, good.size()):
-		set_chip(good[i], "c100")
+		set_chip(good[i], "c50")
 
 func set_chip(peg: Node2D, chip: String) -> void:
 	peg.get_node("Sprite2D").texture = Chips.texture(chip)

@@ -33,7 +33,7 @@ const ITEMS := {
 	"roller":  {"kind": "perk", "max": 3, "rarity": "epic", "icon": "roller", "name": "HIGH ROLLER",
 		"desc": "WINS OVER X1\nPAY 25% MORE."},
 	"midas":   {"kind": "perk", "max": 2, "rarity": "legendary", "icon": "midas", "name": "MIDAS TOUCH",
-		"desc": "+3 PURPLE 100\nCHIPS PER BOARD."},
+		"desc": "+3 GOLD CHIPS\nPER BOARD."},
 	"jackpot": {"kind": "perk", "max": 1, "rarity": "legendary", "icon": "jackpot", "name": "JACKPOT",
 		"desc": "EVERY WIN\nPAYS DOUBLE."},
 }

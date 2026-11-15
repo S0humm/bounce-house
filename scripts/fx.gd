@@ -21,13 +21,9 @@ const TIER_COLORS := [
 	Color(0.55, 1.0, 1.0),
 ]
 
-# Win tiers by ball multiplier: loss, win, nice, big, mega, jackpot
 const BAYER := [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5]
 const BANNER_Y := 156   # vertical center of the win banner
 
-const WIN_COINS := [0, 10, 22, 40, 70, 110]
-const WIN_SHAKE := [0.0, 0.05, 0.15, 0.35, 0.6, 0.85]
-const WIN_PARTY := [0.0, 0.0, 0.8, 1.8, 3.0, 4.5]
 
 var sfx: Node
 var screen := Vector2(640, 360)
@@ -309,78 +305,20 @@ func bet_changed(direction: int) -> void:
 func peg_pop(row: int) -> void:
 	sfx.play("pop", 0.75 + row * 0.08, -8.0)
 
-func landed(pos: Vector2, mult: float, payout: int, bet: int, quota: int) -> void:
-	var tier := 0
-	if mult >= 10.0:
-		tier = 5
-	elif mult >= 7.0:
-		tier = 4
-	elif mult >= 4.0:
-		tier = 3
-	elif mult >= 2.0:
-		tier = 2
-	elif mult >= 1.0:
-		tier = 1
-	# Big money is a big win even at a modest multiplier
-	if payout > bet and payout >= quota * 0.5:
-		tier = maxi(tier, 3)
+# Ball reached the bottom: just the result and one sound, nothing else
+func landed(pos: Vector2, mult: float, payout: int, bet: int, _quota: int) -> void:
 	var p := Vector2(clampf(pos.x, 50.0, screen.x - 50.0), 318.0)
 	var net := payout - bet
-
-	if mult < 0.0:
-		# Negative landing: you lose the bet AND then some
-		win_streak = 0
-		sfx.play("womp")
-		sfx.play("lose", 0.7)
-		popup(p, "-" + Fmt.money(-net), Color(1.0, 0.3, 0.3), 3, 24.0, 1.0)
-		popup(p + Vector2(0, -26), "NEGATIVE!", Color(1.0, 0.45, 0.4), 1)
-		flash(Color(0.8, 0.0, 0.0), 0.35, 0.4)
-		add_trauma(0.45)
-		hit_stop(0.08)
-		return
-	if tier == 0:
-		win_streak = 0
+	if net >= 0:
+		sfx.play("coin")
+		popup(p, "+" + Fmt.money(net), Color(0.55, 1.0, 0.55), 2, 24.0, 0.9)
+	else:
 		sfx.play("lose")
-		popup(p, "-" + Fmt.money(-net), Color(1.0, 0.5, 0.45), 1)
-		return
-
-	win_streak += 1
-	sfx.play("coin", sfx.ladder(win_streak - 1))
-	popup(p, "+" + Fmt.money(net), Color(0.55, 1.0, 0.55), 3 if tier >= 4 else 2, 28.0, 0.9)
-	if win_streak >= 2:
-		popup(p + Vector2(0, -24), "STREAK x%d" % win_streak, Color(1.0, 0.6, 0.2), 1)
-	coins(p, WIN_COINS[tier], tier >= 3)
-	add_trauma(WIN_SHAKE[tier])
-	party = maxf(party, WIN_PARTY[tier])
-
-	match tier:
-		2:
-			sfx.play("win_small")
-			popup(p + Vector2(0, -42), "NICE WIN!", Color(1.0, 0.85, 0.3), 2, 20.0, 1.0)
-		3:
-			sfx.play("win_big")
-			show_banner("BIG WIN!", Color(1.0, 0.85, 0.3), 0.9, 4)
-			flash(Color(1.0, 0.85, 0.3), 0.3, 0.35)
-			hit_stop(0.05)
-		4:
-			sfx.play("mega")
-			show_banner("MEGA WIN!!", Color(1.0, 0.5, 0.35), 1.3, 4)
-			flash(Color(1.0, 0.7, 0.3), 0.4, 0.5)
-			hit_stop(0.09)
-			confetti(40)
-		5:
-			sfx.play("mega")
-			show_banner("JACKPOT!!!", Color.WHITE, 2.0, 5, true)
-			flash(Color(1.0, 1.0, 1.0), 0.55, 0.6)
-			hit_stop(0.12)
-			confetti(80)
+		popup(p, "-" + Fmt.money(-net), Color(1.0, 0.45, 0.4), 2, 24.0, 0.9)
 
 func goal_reached() -> void:
 	sfx.play("goal")
 	popup(Vector2(screen.x / 2.0, 100.0), "GOAL!", Color(1.0, 0.85, 0.3), 3, 16.0, 1.1)
-	flash(Color(1.0, 0.85, 0.3), 0.2, 0.3)
-	party = maxf(party, 1.0)
-	confetti(25)
 
 func ante_cleared(ante: int) -> void:
 	sfx.play("ante")
