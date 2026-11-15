@@ -21,6 +21,7 @@ const ITEMS := {
 	"lucky":   {"kind": "perk", "max": 3, "rarity": "rare",      "icon": "lucky",   "short": "LUCKY",  "name": "LUCKY CHARM",  "desc": "SKULLS TAKE 10%\nLESS EACH."},
 	"gold":    {"kind": "perk", "max": 5, "rarity": "rare",      "icon": "gold",    "short": "GOLD",   "name": "GOLD PLATING", "desc": "+0.01 ON EVERY\nGOOD CHIP."},
 	"limit":   {"kind": "perk", "max": 3, "rarity": "epic",      "icon": "limit",   "short": "LIMIT+1","name": "BALL LIMIT +1", "desc": "+1 BALL EVERY ANTE\nAND +1 BAG SLOT."},
+	"pit666":  {"kind": "perk", "max": 1, "rarity": "legendary", "icon": "666",     "short": "666",    "name": "666",           "desc": "A DEAL FROM THE PIT:\n1 IN 6 BALLS PAY X6.66\n1 IN 6 PAY NOTHING."},
 	"insure":  {"kind": "perk", "max": 1, "rarity": "epic",      "icon": "insure",  "short": "INSURE", "name": "INSURANCE",    "desc": "BALLS NEVER PAY\nBELOW X0.5."},
 	"fire2":   {"kind": "ball", "ball": "fire", "count": 2, "rarity": "epic", "icon": "fire", "short": "FIRE", "name": "2 FIRE BALLS", "desc": "X2 WHEN IT LANDS IF\nIT NEVER HITS A SKULL."},
 	"banana2": {"kind": "ball", "ball": "banana", "count": 2, "rarity": "epic", "icon": "banana", "short": "BANANA", "name": "2 GROS MICHELS", "desc": "A BANANA YOU DROP.\n+X0.50 WHEN IT LANDS."},
