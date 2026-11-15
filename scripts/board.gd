@@ -31,8 +31,8 @@ const WHITE := Color(0.95, 0.95, 0.92)
 @export var drop_jitter := 2.0      # tiny random nudge so every drop isn't identical
 @export var starting_money := 100
 @export var balls_per_ante := 5
-@export var first_quota := 250
-@export var quota_growth := 2.0     # each ante's goal is 2x the last
+@export var first_quota := 200
+@export var quota_growth := 1.75    # goal multiplier per ante during the warm-up
 
 var pegs: Array[Node2D] = []
 
@@ -106,15 +106,17 @@ func start_run() -> void:
 	open_crate("STARTER CRATE")
 
 func start_ante() -> void:
-	quota = int(round(first_quota * pow(quota_growth, ante - 1)))
-	balls_left = balls_per_ante + perks.get("extra", 0) + (2 if easy() else 0)
+	quota = quota_for(ante)
+	balls_left = balls_per_ante + perks.get("extra", 0) + (2 if easy() else 0) - (1 if ante >= FEWER_BALLS_FROM else 0)
 	ante_over = false
 	goal_announced = false
 	new_board()
 	clamp_bet()
-	var warn := "\nWARM-UP: NO BALL PAYS\nUNDER X0.5"
-	if ante > EASY_ANTES:
-		warn = "\nMORE SKULLS EVERY ANTE."
+	var warn := "\nWARM-UP: NO BALL PAYS\nUNDER X0.8"
+	if ante >= FEWER_BALLS_FROM:
+		warn = "\nMORE SKULLS. 1 LESS BALL."
+	elif ante > EASY_ANTES:
+		warn = "\nMORE SKULLS, LESS GOLD."
 	message_label.text = "ANTE %d: REACH %s\n%d BALLS%s\nSPACE DROP  1-4 BALL" % [ante, Fmt.money(quota), balls_left, warn]
 	update_status()
 
@@ -125,6 +127,11 @@ func check_ante_end() -> void:
 		ante_over = true
 		message_label.text = "GOAL REACHED!\nOPEN YOUR CRATE..."
 		fx.ante_cleared(ante)
+		if perks.has("banana") and randi() % BANANA_EXTINCT == 0:
+			perks.erase("banana")
+			update_perk_panel()
+			message_label.text = "GOAL REACHED!\nGROS MICHEL WENT EXTINCT.\nOPEN YOUR CRATE..."
+			fx.extinct()
 		await get_tree().create_timer(1.8).timeout
 		await open_crate("ANTE %d CRATE" % ante)
 		ante += 1
@@ -172,13 +179,31 @@ func ball_mods() -> Dictionary:
 
 # Antes 1-3 are a warm-up: one or two skulls, extra balls and a x0.5 floor.
 # From ante 4 the board gets meaner every ante.
-const EASY_ANTES := 3
-const EASY_FLOOR := 0.5
+# ---- Difficulty knobs (tweak these) ----
+const EASY_ANTES := 3            # warm-up antes
+const EASY_FLOOR := 0.8          # warm-up: no ball pays under this
+const INSURE_FLOOR := 0.5        # Insurance perk: no ball pays under this
+const BANANA_BONUS := 0.5        # Gros Michel: added to every landing
+const BANANA_EXTINCT := 6        # Gros Michel: 1 in this many chance to go extinct each ante
+const SKULLS_AT_ANTE_4 := 5      # skulls on the first hard ante...
+const SKULLS_PER_ANTE := 2       # ...plus this many more every ante after
+const MAX_SKULLS := 22           # (the board has 52 chips)
+const HARD_QUOTA_GROWTH := 3.0   # after the warm-up each goal is 3x the last
+const CHIP_SHRINK := 0.8         # each hard ante, big chips (25s and 50s) get this much rarer
+const FEWER_BALLS_FROM := 7      # from this ante on, 1 less ball per ante
 
 func skull_count() -> int:
 	if ante <= EASY_ANTES:
 		return [1, 2, 2][ante - 1]
-	return mini(3 + int((ante - 4) * 0.7), 12)
+	return mini(SKULLS_AT_ANTE_4 + SKULLS_PER_ANTE * (ante - EASY_ANTES - 1), MAX_SKULLS)
+
+func quota_for(a: int) -> int:
+	var easy_part := first_quota * pow(quota_growth, mini(a, EASY_ANTES) - 1)
+	return int(round(easy_part * pow(HARD_QUOTA_GROWTH, maxi(a - EASY_ANTES, 0))))
+
+# How much rarer the big chips are this ante (1.0 during the warm-up)
+func chip_shrink() -> float:
+	return pow(CHIP_SHRINK, maxi(ante - EASY_ANTES, 0))
 
 func easy() -> bool:
 	return ante <= EASY_ANTES
@@ -344,11 +369,14 @@ func _on_tray_entered(body: Node2D) -> void:
 	var ball_bet: int = body.get_meta("bet", 0)
 	var mult: float = body.get_multiplier()
 	var notes := []
+	if perks.has("banana"):
+		mult += BANANA_BONUS
+		notes.append("GROS MICHEL")
 	if easy() and mult < EASY_FLOOR:
 		mult = EASY_FLOOR
 		notes.append("WARM-UP")
-	if mult < EASY_FLOOR and perks.has("insure"):
-		mult = EASY_FLOOR
+	if mult < INSURE_FLOOR and perks.has("insure"):
+		mult = INSURE_FLOOR
 		notes.append("INSURED")
 	if mult > 1.0 and perks.has("jackpot"):
 		mult *= 2.0
@@ -429,10 +457,7 @@ func _process(delta: float) -> void:
 		update_bet_input()
 
 func _on_chip_hit(ball: RigidBody2D, peg: Node, chip: String, gain: float) -> void:
-	var smashed: bool = chip == "black" and ball.ball_type == "heavy"
-	fx.chip_hit(chip, ball.global_position, gain, ball.hits - 1, smashed)
-	if smashed:
-		set_chip(peg, Chips.pick_positive())   # heavy balls turn skulls into good chips
+	fx.chip_hit(chip, ball.global_position, gain, ball.hits - 1)
 	var i := live_balls.find(ball)
 	if i >= 0 and i < live_labels.size():
 		pulse(live_labels[i], Color(1.6, 0.5, 0.5) if gain < 0.0 else Color(1.5, 1.5, 1.5))
@@ -472,7 +497,7 @@ func new_board() -> void:
 			peg.position = Vector2(center_x - row_width / 2.0 + i * spacing, top_y + row * spacing * 0.866)
 			add_child(peg)
 			peg.set_meta("row", row)
-			set_chip(peg, Chips.pick_positive())
+			set_chip(peg, Chips.pick_positive(chip_shrink()))
 			pegs.append(peg)
 
 	# Skulls: one is always on the bottom row, the rest anywhere below the top row

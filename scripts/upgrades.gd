@@ -13,15 +13,16 @@ const RARITIES := {
 const ORDER := ["common", "rare", "epic", "legendary"]
 
 const ITEMS := {
-	"heavy2":  {"kind": "ball", "ball": "heavy",  "count": 2, "rarity": "common", "icon": "heavy",  "short": "HEAVY",  "name": "2 HEAVY BALLS",  "desc": "X2 CHIP VALUE.\nSMASHES SKULLS."},
+	"heavy2":  {"kind": "ball", "ball": "heavy",  "count": 2, "rarity": "common", "icon": "heavy",  "short": "HEAVY",  "name": "2 HEAVY BALLS",  "desc": "X2 CHIP VALUE.\nFALLS FAST."},
 	"bouncy2": {"kind": "ball", "ball": "bouncy", "count": 2, "rarity": "common", "icon": "bouncy", "short": "BOUNCY", "name": "2 BOUNCY BALLS", "desc": "+0.03 BONUS ON\nEVERY HIT."},
 	"ghost2":  {"kind": "ball", "ball": "ghost",  "count": 2, "rarity": "rare",   "icon": "ghost",  "short": "GHOST",  "name": "2 GHOST BALLS",  "desc": "PASSES STRAIGHT\nTHROUGH SKULLS."},
-	"heavy4":  {"kind": "ball", "ball": "heavy",  "count": 4, "rarity": "rare",   "icon": "heavy",  "short": "HEAVY",  "name": "4 HEAVY BALLS",  "desc": "X2 CHIP VALUE.\nSMASHES SKULLS."},
+	"heavy4":  {"kind": "ball", "ball": "heavy",  "count": 4, "rarity": "rare",   "icon": "heavy",  "short": "HEAVY",  "name": "4 HEAVY BALLS",  "desc": "X2 CHIP VALUE.\nFALLS FAST."},
 	"bouncy4": {"kind": "ball", "ball": "bouncy", "count": 4, "rarity": "rare",   "icon": "bouncy", "short": "BOUNCY", "name": "4 BOUNCY BALLS", "desc": "+0.03 BONUS ON\nEVERY HIT."},
 	"lucky":   {"kind": "perk", "max": 3, "rarity": "rare",      "icon": "lucky",   "short": "LUCKY",  "name": "LUCKY CHARM",  "desc": "SKULLS TAKE 10%\nLESS EACH."},
 	"gold":    {"kind": "perk", "max": 5, "rarity": "rare",      "icon": "gold",    "short": "GOLD",   "name": "GOLD PLATING", "desc": "+0.01 ON EVERY\nGOOD CHIP."},
 	"extra":   {"kind": "perk", "max": 3, "rarity": "epic",      "icon": "extra",   "short": "+1 BALL","name": "EXTRA BALL",   "desc": "+1 BALL EVERY\nANTE."},
 	"insure":  {"kind": "perk", "max": 1, "rarity": "epic",      "icon": "insure",  "short": "INSURE", "name": "INSURANCE",    "desc": "BALLS NEVER PAY\nBELOW X0.5."},
+	"banana":  {"kind": "perk", "max": 1, "rarity": "epic",      "icon": "banana",  "short": "BANANA", "name": "GROS MICHEL",  "desc": "+X0.50 ON EVERY BALL.\n1 IN 6 CHANCE IT GOES\nEXTINCT EACH ANTE."},
 	"jackpot": {"kind": "perk", "max": 1, "rarity": "legendary", "icon": "jackpot", "short": "JACKPOT","name": "JACKPOT",      "desc": "EVERY WIN\nPAYS DOUBLE."},
 }
 

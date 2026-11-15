@@ -8,7 +8,7 @@ signal tier_up(ball: RigidBody2D, tier: int)
 
 # Ball types:
 #   normal: the standard ball
-#   heavy:  falls fast, every chip counts double, smashes skulls into good chips
+#   heavy:  falls fast, every good chip counts double (skulls still halve it)
 #   bouncy: springs around and gets +0.03 extra on every hit
 #   ghost:  floats straight through skulls
 const TYPES := {
@@ -97,9 +97,8 @@ func _on_body_entered(body: Node) -> void:
 	var before := bonus
 	match info["kind"]:
 		"black":
-			if ball_type != "heavy":
-				# A skull takes half the multiplier away (and pushes a negative one further down)
-				bonus -= absf(bonus) * black_cut
+			# A skull takes half the multiplier away
+			bonus -= absf(bonus) * black_cut
 		"add":
 			bonus += (info["add"] + gold_add) * gain_mult
 	if ball_type == "bouncy":

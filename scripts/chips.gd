@@ -31,14 +31,22 @@ static func color(chip: String) -> Color:
 static func is_bad(chip: String) -> bool:
 	return info(chip)["kind"] != "add"
 
-# Random good chip, weighted so small values are common and big ones rare
-static func pick_positive() -> String:
+# Random good chip, weighted so small values are common and big ones rare.
+# shrink < 1 makes the 25s and 50s rarer (and 10s a bit rarer) on later antes.
+static func pick_positive(shrink := 1.0) -> String:
+	var w := {}
 	var total := 0.0
 	for k in POSITIVE:
-		total += TYPES[k]["weight"]
+		var weight: float = TYPES[k]["weight"]
+		if k == "c25" or k == "c50":
+			weight *= shrink
+		elif k == "c10":
+			weight *= sqrt(shrink)
+		w[k] = weight
+		total += weight
 	var r := randf() * total
 	for k in POSITIVE:
-		r -= TYPES[k]["weight"]
+		r -= w[k]
 		if r < 0.0:
 			return k
 	return "c1"

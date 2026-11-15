@@ -111,8 +111,10 @@ func _tile(id: String) -> Control:
 	if tex:
 		var icon := TextureRect.new()
 		icon.texture = tex
-		icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		# Small pixel icons stay crisp; bigger hand-drawn art is scaled down smoothly
+		icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST if tex.get_width() <= 32 else CanvasItem.TEXTURE_FILTER_LINEAR
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		icon.size = Vector2(32, 32)
 		icon.position = Vector2((TILE_W - 32) / 2.0, 10)
 		tile.add_child(icon)

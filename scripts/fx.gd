@@ -27,15 +27,11 @@ func _draw() -> void:
 	draw_rect(Rect2(0, 0, t, screen.y), WALL)
 	draw_rect(Rect2(screen.x - t, 0, t, screen.y), WALL)
 
-func chip_hit(chip: String, pos: Vector2, gain: float, combo: int, smashed := false) -> void:
+func chip_hit(chip: String, pos: Vector2, gain: float, combo: int) -> void:
 	var info := Chips.info(chip)
 	if info["kind"] == "black":
-		if smashed:
-			sfx.play("pop", 0.6)
-			popup(pos + Vector2(0, -16), "SMASH!", Color(0.8, 0.86, 1.0))
-		else:
-			sfx.play("womp")
-			popup(pos + Vector2(0, -16), "-50%", Color(1.0, 0.35, 0.3))
+		sfx.play("womp")
+		popup(pos + Vector2(0, -16), "-50%", Color(1.0, 0.35, 0.3))
 		return
 	var add: float = info["add"]
 	if add >= 0.25:
@@ -74,6 +70,10 @@ func goal_reached() -> void:
 func ante_cleared(ante: int) -> void:
 	sfx.play("ante")
 	popup(Vector2(screen.x / 2.0, 150.0), "ANTE %d CLEARED!" % ante, Color(1.0, 0.85, 0.3), 3, 10.0, 1.6)
+
+func extinct() -> void:
+	sfx.play("womp", 0.8)
+	popup(Vector2(screen.x / 2.0, 200.0), "GROS MICHEL WENT EXTINCT", Color(1.0, 0.9, 0.35), 1, 8.0, 2.0)
 
 func busted(short_by: int, near_miss: bool) -> void:
 	sfx.play("bust")
