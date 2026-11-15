@@ -7,6 +7,7 @@ signal finished(item: String)
 
 const Upgrades := preload("res://scripts/upgrades.gd")
 const PixelLabel := preload("res://scripts/pixel_label.gd")
+const BallIcons := preload("res://scripts/ball_icons.gd")
 
 const TILE := 52          # distance between tiles on the strip
 const TILE_W := 48
@@ -108,7 +109,11 @@ func _tile(id: String) -> Control:
 	band.color = col
 	tile.add_child(band)
 	var tex := Upgrades.icon_texture(id)
-	if tex:
+	if it["kind"] == "ball":
+		var pic := BallIcons.rect(it["ball"], 32)   # the actual ball you get
+		pic.position = Vector2((TILE_W - 32) / 2.0, 10)
+		tile.add_child(pic)
+	elif tex:
 		var icon := TextureRect.new()
 		icon.texture = tex
 		# Small pixel icons stay crisp; bigger hand-drawn art is scaled down smoothly

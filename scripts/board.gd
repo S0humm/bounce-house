@@ -8,12 +8,12 @@ const PixelLabel := preload("res://scripts/pixel_label.gd")
 const Chips := preload("res://scripts/chips.gd")
 const Upgrades := preload("res://scripts/upgrades.gd")
 const Fmt := preload("res://scripts/fmt.gd")
+const BallIcons := preload("res://scripts/ball_icons.gd")
 
 const MIN_BET := 5
-const BALL_KEYS := ["normal", "heavy", "bouncy", "ghost", "banana"]   # keys 1-5
-const BALL_NAMES := {"normal": "NORMAL", "heavy": "HEAVY", "bouncy": "BOUNCY", "ghost": "GHOST", "banana": "GROS MICHEL"}
-const BALL_RING := {"heavy": Color(0.6, 0.66, 0.8), "bouncy": Color(0.62, 0.95, 0.2), "ghost": Color(0.55, 0.95, 1.0)}
-const BALL_TAGS := {"normal": "", "heavy": "H ", "bouncy": "B ", "ghost": "G ", "banana": "M "}
+const BALL_KEYS := ["normal", "heavy", "bouncy", "ghost", "banana", "fire"]   # keys 1-6, or up/down
+const BALL_NAMES := {"normal": "NORMAL", "heavy": "HEAVY", "bouncy": "BOUNCY", "ghost": "GHOST", "banana": "GROS MICHEL", "fire": "FIRE"}
+const BALL_TAGS := {"normal": "", "heavy": "H ", "bouncy": "B ", "ghost": "G ", "banana": "M ", "fire": "F "}
 const LIVE_ROWS := 5
 
 # Colors
@@ -48,7 +48,6 @@ var live_empty: Control
 var ball_labels := {}       # NEXT BALL rows: ">1" key labels
 var ball_counts := {}       # ...the "X8" counts
 var ball_icon_rects := {}   # ...and the ball pictures
-var icon_cache := {}
 var drop_x := 320.0         # where the next ball drops (aim with the arrow keys)
 var preview: Sprite2D       # see-through copy of the next ball at the drop point
 const AIM_SPEED := 200.0
@@ -69,7 +68,7 @@ var busted := false
 var ante_over := false
 var goal_announced := false
 var crate_open := false
-var inventory := {"heavy": 0, "bouncy": 0, "ghost": 0, "banana": 0}   # special balls you own
+var inventory := {"heavy": 0, "bouncy": 0, "ghost": 0, "banana": 0, "fire": 0}   # special balls you own
 var perks := {}                                            # upgrade id -> stacks
 var pity := 0                                              # crates in a row without epic+
 var selected := "normal"
@@ -105,7 +104,7 @@ func start_run() -> void:
 	bet = 10
 	ante = 1
 	busted = false
-	inventory = {"heavy": 1, "bouncy": 1, "ghost": 0, "banana": 0}
+	inventory = {"heavy": 1, "bouncy": 1, "ghost": 0, "banana": 0, "fire": 0}
 	perks = {}
 	pity = 0
 	selected = "normal"
@@ -124,7 +123,7 @@ func start_ante() -> void:
 	var warn := "\nWARM-UP: NO BALL PAYS\nUNDER X0.8"
 	if ante > EASY_ANTES:
 		warn = "\nMORE SKULLS, LESS GOLD."
-	message_label.text = "ANTE %d: REACH %s\nUNLIMITED BALLS%s\n<> AIM  SPACE DROP  1-5" % [ante, Fmt.money(quota), warn]
+	message_label.text = "ANTE %d: REACH %s\nUNLIMITED BALLS%s\n<> AIM  UP/DOWN BALL\nSPACE DROP" % [ante, Fmt.money(quota), warn]
 	update_status()
 
 func check_ante_end() -> void:
@@ -183,6 +182,7 @@ const EASY_ANTES := 3            # warm-up antes
 const EASY_FLOOR := 0.8          # warm-up: no ball pays under this
 const INSURE_FLOOR := 0.5        # Insurance perk: no ball pays under this
 const BANANA_BONUS := 0.5        # Gros Michel (banana ball): added to its multiplier when it lands
+const FIRE_MULT := 2.0           # Fire ball: multiplier is doubled on landing if it never touched a skull
 const SKULLS_AT_ANTE_4 := 5      # skulls on the first hard ante...
 const SKULLS_PER_ANTE := 2       # ...plus this many more every ante after
 const MAX_SKULLS := 22           # (the board has 52 chips)
@@ -363,6 +363,9 @@ func _on_tray_entered(body: Node2D) -> void:
 	var ball_bet: int = body.get_meta("bet", 0)
 	var mult: float = body.get_multiplier()
 	var notes := []
+	if body.ball_type == "fire" and not body.extinguished:
+		mult *= FIRE_MULT
+		notes.append("FIRE X2")
 	if body.ball_type == "banana":
 		mult += BANANA_BONUS
 		notes.append("GROS MICHEL")
@@ -414,11 +417,27 @@ func _unhandled_input(event: InputEvent) -> void:
 				select_ball("ghost")
 			KEY_5:
 				select_ball("banana")
+			KEY_6:
+				select_ball("fire")
+			KEY_UP:
+				cycle_ball(-1)
+			KEY_DOWN:
+				cycle_ball(1)
 			KEY_M:
 				fx.toggle_mute()
 			KEY_R:
 				if busted:
 					start_run()
+
+# Up/down: move to the previous/next ball type you actually have
+func cycle_ball(dir: int) -> void:
+	var i := BALL_KEYS.find(selected)
+	for step in BALL_KEYS.size():
+		i = posmod(i + dir, BALL_KEYS.size())
+		var type: String = BALL_KEYS[i]
+		if type == "normal" or inventory[type] > 0:
+			select_ball(type)
+			return
 
 func select_ball(type: String) -> void:
 	if type != "normal" and inventory[type] <= 0:
@@ -441,7 +460,9 @@ func _process(delta: float) -> void:
 			var w := get_viewport_rect().size.x
 			drop_x = clampf(drop_x + dir * AIM_SPEED * delta, AIM_MARGIN, w - AIM_MARGIN)
 	preview.position = Vector2(roundf(drop_x), 20)
-	preview.texture = ball_icon(selected)
+	var tex := BallIcons.icon(selected)
+	preview.texture = tex
+	preview.scale = Vector2.ONE * minf(1.0, 16.0 / maxf(tex.get_width(), tex.get_height()))
 	preview.visible = not busted and not ante_over
 	# Money counts up toward its real value, ticking like a slot machine payout
 	var target := float(money)
@@ -463,6 +484,9 @@ func _process(delta: float) -> void:
 
 func _on_chip_hit(ball: RigidBody2D, peg: Node, chip: String, gain: float) -> void:
 	fx.chip_hit(chip, ball.global_position, gain, ball.hits - 1)
+	if chip == "black" and ball.ball_type == "fire" and not ball.get_meta("fizzle_shown", false):
+		ball.set_meta("fizzle_shown", true)
+		fx.popup(ball.global_position + Vector2(0, -28), "FIZZLED!", Color(1.0, 0.6, 0.3))
 	var i := live_balls.find(ball)
 	if i >= 0 and i < live_labels.size():
 		pulse(live_labels[i], Color(1.6, 0.5, 0.5) if gain < 0.0 else Color(1.5, 1.5, 1.5))
@@ -577,16 +601,14 @@ func build_hud() -> void:
 		live_box.add_child(row)
 		live_labels.append(row)
 
-	var ball_box := add_box(make_panel(left, 124), "NEXT BALL  (1-5)")
+	var ball_box := add_box(make_panel(left, 124), "BALL  (UP/DOWN)")
 	for type in BALL_KEYS:
 		var b := make_button(ball_box, "", 1, 112, 18, select_ball.bind(type), true)
 		var key_label: Control = b.get_meta("label")
 		key_label.position = Vector2(3, 5)
 		ball_labels[type] = key_label
-		var icon := TextureRect.new()
-		icon.texture = ball_icon(type)
+		var icon := BallIcons.rect(type, 16)
 		icon.position = Vector2(22, 1)
-		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		b.add_child(icon)
 		ball_icon_rects[type] = icon
 		var count := PixelLabel.new()
@@ -721,37 +743,6 @@ func update_ball_panel() -> void:
 		label.self_modulate = col
 		ball_counts[type].self_modulate = col
 		ball_icon_rects[type].modulate = Color(1, 1, 1, 0.35) if col == DIM else Color.WHITE
-
-# 16x16 picture of each ball type, the same art the real balls use
-func ball_icon(type: String) -> Texture2D:
-	if icon_cache.has(type):
-		return icon_cache[type]
-	var img := Image.create(16, 16, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
-	if type == "banana":
-		var art: Image = (load("res://art/icons/banana.png") as Texture2D).get_image()
-		art.convert(Image.FORMAT_RGBA8)
-		art.resize(16, 16, Image.INTERPOLATE_BILINEAR)
-		img = art
-	else:
-		var core: Image = (load("res://art/ball.png") as Texture2D).get_image()
-		core.convert(Image.FORMAT_RGBA8)
-		if type == "ghost":
-			for y in core.get_height():
-				for x in core.get_width():
-					var c := core.get_pixel(x, y)
-					c.a *= 0.55
-					core.set_pixel(x, y, c)
-		img.blend_rect(core, Rect2i(Vector2i.ZERO, core.get_size()), Vector2i(2, 2))
-		var ring_col: Color = BALL_RING.get(type, Color(0, 0, 0, 0))
-		if ring_col.a > 0.0:
-			for y in 16:
-				for x in 16:
-					var r := Vector2(x + 0.5 - 8.0, y + 0.5 - 8.0).length()
-					if r > 6.6 and r <= 7.8:
-						img.set_pixel(x, y, ring_col)
-	icon_cache[type] = ImageTexture.create_from_image(img)
-	return icon_cache[type]
 
 func update_perk_panel() -> void:
 	if perk_box == null:

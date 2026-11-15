@@ -12,12 +12,14 @@ signal tier_up(ball: RigidBody2D, tier: int)
 #   bouncy: springs around and gets +0.03 extra on every hit
 #   ghost:  floats straight through skulls
 #   banana: Gros Michel, a banana you drop; +x0.50 when it lands (added by the board)
+#   fire:   x2 when it lands, but only if it never touches a skull (a skull puts it out)
 const TYPES := {
 	"normal": {"gravity": 0.7,  "bounce": 0.8,  "friction": 0.01, "mass": 1.0, "gain": 1.0, "max_speed": 420.0, "ring": Color(0, 0, 0, 0)},
 	"heavy":  {"gravity": 1.1,  "bounce": 0.3,  "friction": 0.3, "mass": 4.0, "gain": 2.0, "max_speed": 480.0, "ring": Color(0.6, 0.66, 0.8)},
 	"bouncy": {"gravity": 0.55, "bounce": 0.9,  "friction": 0.0, "mass": 0.8, "gain": 1.0, "max_speed": 230.0, "ring": Color(0.62, 0.95, 0.2)},
 	"ghost":  {"gravity": 0.7,  "bounce": 0.8,  "friction": 0.01, "mass": 1.0, "gain": 1.0, "max_speed": 420.0, "ring": Color(0.55, 0.95, 1.0)},
 	"banana": {"gravity": 0.7,  "bounce": 0.7,  "friction": 0.05, "mass": 1.0, "gain": 1.0, "max_speed": 420.0, "ring": Color(0, 0, 0, 0)},
+	"fire":   {"gravity": 0.7,  "bounce": 0.8,  "friction": 0.01, "mass": 1.0, "gain": 1.0, "max_speed": 420.0, "ring": Color(0, 0, 0, 0)},
 }
 const BOUNCY_BONUS := 0.03
 const MIN_MULT := -3.0   # floor, so one cursed ball can't wipe out your whole bankroll
@@ -46,6 +48,8 @@ var stuck_time := 0.0
 var bonus := 0.0      # running multiplier, starts at x0.00
 var hits := 0         # chips touched so far (drives the rising pitch)
 var tier := 0
+var extinguished := false   # fire balls: hit a skull, lost their x2
+var flicker := 0.0
 var ring: Sprite2D
 
 # Call before adding the ball to the scene
@@ -73,6 +77,9 @@ func _ready() -> void:
 		$Sprite2D.texture = art
 		$Sprite2D.scale = Vector2.ONE * (20.0 / art.get_height())
 		$Sprite2D.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	elif ball_type == "fire":
+		$Sprite2D.texture = load("res://art/icons/fire.png")
+		$Sprite2D.offset = Vector2(0, -5)   # flame rises above the round hitbox
 	elif ball_type != "normal":
 		ring = Sprite2D.new()
 		ring.texture = _ring_texture()
@@ -107,6 +114,10 @@ func _on_body_entered(body: Node) -> void:
 		"black":
 			# A skull takes half the multiplier away
 			bonus -= absf(bonus) * black_cut
+			if ball_type == "fire" and not extinguished:
+				extinguished = true   # the flame goes out: back to a plain ball, no x2
+				$Sprite2D.texture = load("res://art/ball.png")
+				$Sprite2D.offset = Vector2.ZERO
 		"add":
 			bonus += (info["add"] + gold_add) * gain_mult
 	if ball_type == "bouncy":
@@ -133,8 +144,8 @@ func tier_color() -> Color:
 
 func update_look() -> void:
 	var col := tier_color()
-	if ball_type == "banana":
-		return   # bananas keep their own colors
+	if ball_type == "banana" or (ball_type == "fire" and not extinguished):
+		return   # bananas and live flames keep their own colors
 	$Sprite2D.modulate = col
 
 # Keep every ball under its top speed so nothing rockets off the board
@@ -147,6 +158,11 @@ func _physics_process(delta: float) -> void:
 	age += delta
 	if ball_type == "banana":
 		$Sprite2D.rotation += linear_velocity.x * delta * 0.05   # tumbles as it falls
+	elif ball_type == "fire" and not extinguished:
+		flicker += delta
+		if flicker > 0.12:
+			flicker = 0.0
+			$Sprite2D.flip_h = not $Sprite2D.flip_h   # simple two-frame flicker
 	# Hard limit: no ball lives forever
 	if age > max_lifetime or position.y > 400.0 or position.y < -100.0:
 		queue_free()
